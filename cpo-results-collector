@@ -1,0 +1,321 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import glob
+import json
+import os
+import sys
+
+
+def parse_provenance(provenance_path):
+    provenance_items = []
+    provenance_item = None
+    with open(provenance_path, 'r') as f:
+        for line in f:
+            if line.startswith('-'):
+                if provenance_item is not None:
+                    provenance_items.append(provenance_item)
+                    provenance_item = {}
+                    if line.strip('-').strip().startswith('timestamp'):
+                        k, v = list(map(lambda x: x.strip(), line.strip('-').strip().split(':', 1)))
+                        provenance_item[k] = v
+                    else:
+                        k,v = list(map(lambda x: x.strip(), line.strip().lstrip('-').split(':')))
+                        provenance_item[k] = v
+                else:
+                    provenance_item = {}
+                    k, v = list(map(lambda x: x.strip(), line.strip().lstrip('-').split(':')))
+                    provenance_item[k] = v
+            else:
+                k, v = list(map(lambda x: x.strip(), line.strip().split(':')))
+                provenance_item[k] = v
+
+    return(provenance_items)
+
+
+def parse_mlst_sequence_type(mlst_sequence_type_csv_path):
+    sequence_type = {}
+    fields_to_collect = {
+        'scheme':        'mlst_scheme',
+        'sequence_type': 'mlst_sequence_type',
+        'score':         'mlst_score',
+    }
+    with open(mlst_sequence_type_csv_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='unix')
+        for row in reader:
+            for original_field, output_field in fields_to_collect.items():
+                sequence_type[output_field] = row[original_field]
+
+    return sequence_type
+
+
+def parse_mlst_alleles(mlst_json_path):
+    mlst_json = {}
+    with open(mlst_json_path, 'r') as f:
+        mlst_json = json.load(f)
+    k = list(mlst_json.keys())[0]
+    v = mlst_json[k]
+    alleles = {'mlst_alleles': str(v['alleles'])}
+
+    return alleles
+
+
+def collect_mlst_results(mlst_output_dir, sample_id):
+    mlst_results = {}
+    sequence_type = parse_mlst_sequence_type(os.path.join(mlst_output_dir, sample_id + '_sequence_type.csv'))
+    mlst_results.update(sequence_type)
+
+    alleles = parse_mlst_alleles(os.path.join(mlst_output_dir, sample_id + '_mlst.json'))
+    mlst_results.update(alleles)
+
+    mlst_provenance_files = glob.glob(os.path.join(mlst_output_dir, sample_id + '*' + '_provenance.yml'))
+    latest_mlst_provenance_file = mlst_provenance_files[-1]
+    mlst_provenance = parse_provenance(latest_mlst_provenance_file)
+    for provenance_item in mlst_provenance:
+        if 'pipeline_name' in provenance_item:
+            mlst_results['mlst_pipeline_name'] = provenance_item['pipeline_name']
+            mlst_results['mlst_pipeline_version'] = provenance_item['pipeline_version']
+
+    return mlst_results
+
+def parse_top_species(top_species_csv_path):
+    top_species = {}
+    fields_to_collect = {
+        'abundance_1_name':                  'species_1_name',
+        'abundance_1_ncbi_taxonomy_id':      'species_1_taxid',
+        'abundance_1_fraction_total_reads':  'species_1_percent',
+        'abundance_2_name':                  'species_2_name',
+        'abundance_2_ncbi_taxonomy_id':      'species_2_taxid',
+        'abundance_2_fraction_total_reads':  'species_2_percent',
+        'unclassified_fraction_total_reads': 'species_unclassified_percent',
+
+    }
+    with open(top_species_csv_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='unix')
+        for row in reader:
+            for original_field, output_field in fields_to_collect.items():
+                top_species[output_field] = row[original_field]
+
+    return top_species
+
+
+def collect_taxon_abundance_results(taxon_abundance_output_dir, sample_id):
+    taxon_abundance_results = {}
+    top_species = parse_top_species(os.path.join(taxon_abundance_output_dir, sample_id + '_S_top_5.csv'))
+    taxon_abundance_results.update(top_species)
+
+
+    taxon_abundance_provenance_files = glob.glob(os.path.join(taxon_abundance_output_dir, sample_id + '*' + '_provenance.yml'))
+    latest_taxon_abundance_provenance_file = taxon_abundance_provenance_files[-1]
+    taxon_abundance_provenance = parse_provenance(latest_taxon_abundance_provenance_file)
+    for provenance_item in taxon_abundance_provenance:
+        if 'pipeline_name' in provenance_item:
+            taxon_abundance_results['species_pipeline_name'] = provenance_item['pipeline_name']
+            taxon_abundance_results['species_pipeline_version'] = provenance_item['pipeline_version']
+
+    return taxon_abundance_results
+
+
+def parse_resistance_gene_report(resistance_gene_report_tsv_path):
+    resistance_genes = []
+    fields_to_collect = {
+        'sample_id':                             'sample_id',
+        'resistance_gene_id':                    'resistance_gene_id',
+        'resistance_gene_contig_id':             'resistance_gene_contig_id',
+        'resistance_gene_contig_size':           'resistance_gene_contig_size',
+        'percent_resistance_gene_coverage':      'resistance_gene_percent_coverage',
+        'percent_resistance_gene_identity':      'resistance_gene_percent_identity',
+        'num_contigs_in_plasmid_reconstruction': 'plasmid_num_contigs',
+        'plasmid_reconstruction_size':           'plasmid_size',
+        'replicon_types':                        'plasmid_replicon_types',
+        'mob_suite_primary_cluster_id':          'plasmid_mob_suite_primary_cluster_id',
+        'mob_suite_secondary_cluster_id':        'plasmid_mob_suite_secondary_cluster_id',
+        'mash_nearest_neighbor':                 'plasmid_mash_nearest_neighbor',
+        'alignment_ref_plasmid':                 'plasmid_alignment_ref',
+        'depth_coverage_threshold':              'plasmid_alignment_depth_threshold',
+        'percent_ref_plasmid_coverage_above_depth_threshold': 'plasmid_alignment_percent_coverage_above_depth_threshold',
+        'num_snps_vs_ref_plasmid':                              'plasmid_alignment_num_snps',
+    }
+    with open(resistance_gene_report_tsv_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='excel-tab')
+        for row in reader:
+            gene = {}
+            for original_field, output_field in fields_to_collect.items():
+                gene[output_field] = row[original_field]
+            resistance_genes.append(gene)
+
+    return resistance_genes
+
+
+def collect_plasmid_results(plasmid_screen_output_dir, sample_id):
+    plasmid_results = []
+    resistance_genes = parse_resistance_gene_report(os.path.join(plasmid_screen_output_dir, sample_id + '_resistance_gene_report.tsv'))
+    plasmid_results += resistance_genes
+
+    return plasmid_results
+
+
+def parse_fastp_csv(fastp_csv_path):
+    fastp_stats = {}
+    fields_to_collect = {
+        'total_reads_before_filtering':       'total_reads',
+        'read1_mean_length_before_filtering': 'read1_mean_length',
+        'read2_mean_length_before_filtering': 'read2_mean_length',
+        'q30_rate_before_filtering':          'q30_rate',
+    }
+    with open(fastp_csv_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='unix')
+        for row in reader:
+            # print(json.dumps(row, indent=2))
+            for original_field, output_field in fields_to_collect.items():
+                fastp_stats[output_field] = row[original_field]
+    return fastp_stats
+
+
+def parse_quast_csv(quast_csv_path):
+    quast_stats = {}
+    fields_to_collect = {
+        'total_length': 'assembly_total_length',
+        'num_contigs':  'assembly_num_contigs',
+        'assembly_N50': 'assembly_N50',
+    }
+    with open(quast_csv_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='unix')
+        for row in reader:
+            # print(json.dumps(row, indent=2))
+            for original_field, output_field in fields_to_collect.items():
+                quast_stats[output_field] = row[original_field]
+    return quast_stats
+
+
+def collect_assembly_results(assembly_output_dir, sample_id, assembler):
+    assembly_results = {}
+
+    fastp_stats = parse_fastp_csv(os.path.join(assembly_output_dir, sample_id + '_fastp.csv'))
+    assembly_results.update(fastp_stats)
+
+    quast_stats = parse_quast_csv(os.path.join(assembly_output_dir, sample_id + '_' + assembler + '_quast.csv'))
+    assembly_results.update(quast_stats)
+
+    assembly_provenance_files = glob.glob(os.path.join(assembly_output_dir, sample_id + '*' + '_provenance.yml'))
+    latest_assembly_provenance_file = assembly_provenance_files[-1]
+    
+    assembly_provenance = parse_provenance(latest_assembly_provenance_file)
+    for provenance_item in assembly_provenance:
+        if 'pipeline_name' in provenance_item:
+            assembly_results['assembly_pipeline_name'] = provenance_item['pipeline_name']
+            assembly_results['assembly_pipeline_version'] = provenance_item['pipeline_version']
+            assembly_results['assembly_tool_name'] = assembler
+    
+    return assembly_results
+    
+
+def main(args):
+    output = {}
+        
+    if not args.sample_id:
+        sample_id = os.path.basename(args.analysis_dir.rstrip('/'))
+    else:
+        sample_id = args.sample_id
+
+    output['sample_id'] = sample_id
+    
+    assembly_output_dirname = 'routine-assembly-v0.2-output'
+    assembly_output_subdir = os.path.join(args.analysis_dir, assembly_output_dirname)
+    assembly_results = collect_assembly_results(assembly_output_subdir, sample_id, args.assembler)
+    output.update(assembly_results)
+
+    mlst_output_dirname = 'mlst-nf-v0.1-output'
+    mlst_output_subdir = os.path.join(args.analysis_dir, mlst_output_dirname)
+    mlst_results = collect_mlst_results(mlst_output_subdir, sample_id)
+    output.update(mlst_results)
+
+    taxon_abundance_output_dirname = 'taxon-abundance-v0.1-output'
+    taxon_abundance_output_subdir = os.path.join(args.analysis_dir, taxon_abundance_output_dirname)
+    taxon_abundance_results = collect_taxon_abundance_results(taxon_abundance_output_subdir, sample_id)
+    output.update(taxon_abundance_results)
+
+    plasmid_outputs = []
+    plasmid_screen_output_dirname = 'plasmid-screen-v0.2-output'
+    plasmid_screen_output_subdir = os.path.join(args.analysis_dir, plasmid_screen_output_dirname)
+    plasmid_screen_results = collect_plasmid_results(plasmid_screen_output_subdir, sample_id)
+    plasmid_outputs += plasmid_screen_results
+    
+    output_fieldnames = [
+        'sample_id',
+        'total_reads',
+        'read1_mean_length',
+        'read2_mean_length',
+        'q30_rate',
+        'assembly_total_length',
+        'assembly_num_contigs',
+        'assembly_N50',
+        'assembly_pipeline_name',
+        'assembly_pipeline_version',
+        'assembly_tool_name',
+        'mlst_scheme',
+        'mlst_sequence_type',
+        'mlst_score',
+        'mlst_alleles',
+        'mlst_pipeline_name',
+        'mlst_pipeline_version',
+        'species_1_name',
+        'species_1_taxid',
+        'species_1_percent',
+        'species_2_name',
+        'species_2_taxid',
+        'species_2_percent',
+        'species_unclassified_percent',
+        'species_pipeline_name',
+        'species_pipeline_version',
+    ]
+
+    if not args.output:
+        output_writer = csv.DictWriter(sys.stdout, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+        if not args.noheader:
+            output_writer.writeheader()
+        output_writer.writerow(output)
+    else:
+        with open(args.output, 'w') as f:
+            output_writer = csv.DictWriter(f, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+            if not args.noheader:
+                output_writer.writeheader()
+            output_writer.writerow(output)
+
+    plasmid_output_fieldnames = [
+        'sample_id',
+        'resistance_gene_id',
+        'resistance_gene_contig_id',
+        'resistance_gene_contig_size',
+        'resistance_gene_percent_coverage',
+        'resistance_gene_percent_identity',
+        'plasmid_num_contigs',
+        'plasmid_size',
+        'plasmid_replicon_types',
+        'plasmid_mob_suite_primary_cluster_id',
+        'plasmid_mob_suite_secondary_cluster_id',
+        'plasmid_mash_nearest_neighbor',
+        'plasmid_alignment_ref',
+        'plasmid_alignment_depth_threshold',
+        'plasmid_alignment_percent_coverage_above_depth_threshold',
+        'plasmid_alignment_num_snps',
+    ]
+
+    with open(args.plasmid_output, 'w') as f:
+        plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+        if not args.noheader:
+            plasmid_output_writer.writeheader()
+        for plasmid_output in plasmid_outputs:    
+            plasmid_output_writer.writerow(plasmid_output)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-s', '--sample-id')
+    parser.add_argument('-d', '--analysis-dir')
+    parser.add_argument('-a', '--assembler', default='unicycler')
+    parser.add_argument('--noheader', action='store_true')
+    parser.add_argument('--output')
+    parser.add_argument('--plasmid-output')
+    args = parser.parse_args()
+    main(args)
