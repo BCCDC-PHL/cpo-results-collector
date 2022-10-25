@@ -6,33 +6,62 @@ import glob
 import json
 import os
 import sys
+import yaml
+
+
+def jdump(x):
+    print(json.dumps(x, indent=2))
 
 
 def parse_provenance(provenance_path):
-    provenance_items = []
-    provenance_item = None
     with open(provenance_path, 'r') as f:
-        for line in f:
-            if line.startswith('-'):
-                if provenance_item is not None:
-                    provenance_items.append(provenance_item)
-                    provenance_item = {}
-                    if line.strip('-').strip().startswith('timestamp'):
-                        k, v = list(map(lambda x: x.strip(), line.strip('-').strip().split(':', 1)))
-                        provenance_item[k] = v
-                    else:
-                        k,v = list(map(lambda x: x.strip(), line.strip().lstrip('-').split(':')))
-                        provenance_item[k] = v
-                else:
-                    provenance_item = {}
-                    k, v = list(map(lambda x: x.strip(), line.strip().lstrip('-').split(':')))
-                    provenance_item[k] = v
-            else:
-                k, v = list(map(lambda x: x.strip(), line.strip().split(':')))
-                provenance_item[k] = v
+        try:
+            parsed_provenance = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            print(e)
+            exit(-1)
+    for provenance_item in parsed_provenance:
+        if 'timestamp_analysis_start' in provenance_item.keys():
+            provenance_item['timestamp_analysis_start'] = str(provenance_item['timestamp_analysis_start'])
 
-    return(provenance_items)
+    return(parsed_provenance)
 
+
+def parse_assembly_provenance(provenance_path):
+    parsed_provenance = parse_provenance(provenance_path)
+    assembly_provenance = {}
+    for provenance_item in parsed_provenance:
+        if 'pipeline_name' in provenance_item:
+            assembly_provenance['assembly_pipeline_name'] = provenance_item['pipeline_name']
+        if 'pipeline_version' in provenance_item:
+            assembly_provenance['assembly_pipeline_version'] = provenance_item['pipeline_version']
+
+    return assembly_provenance
+
+
+def parse_mlst_provenance(provenance_path):
+    parsed_provenance = parse_provenance(provenance_path)
+    mlst_provenance = {}
+    for provenance_item in parsed_provenance:
+        if 'pipeline_name' in provenance_item:
+            mlst_provenance['mlst_pipeline_name'] = provenance_item['pipeline_name']
+        if 'pipeline_version' in provenance_item:
+            mlst_provenance['mlst_pipeline_version'] = provenance_item['pipeline_version']
+
+    return mlst_provenance
+
+
+def parse_taxon_abundance_provenance(provenance_path):
+    parsed_provenance = parse_provenance(provenance_path)
+    taxon_abundance_provenance = {}
+    for provenance_item in parsed_provenance:
+        if 'pipeline_name' in provenance_item:
+            taxon_abundance_provenance['species_pipeline_name'] = provenance_item['pipeline_name']
+        if 'pipeline_version' in provenance_item:
+            taxon_abundance_provenance['species_pipeline_version'] = provenance_item['pipeline_version']
+
+    return taxon_abundance_provenance
+            
 
 def parse_mlst_sequence_type(mlst_sequence_type_csv_path):
     sequence_type = {}
@@ -56,28 +85,51 @@ def parse_mlst_alleles(mlst_json_path):
         mlst_json = json.load(f)
     k = list(mlst_json.keys())[0]
     v = mlst_json[k]
-    alleles = {'mlst_alleles': str(v['alleles'])}
+    alleles = v['alleles']
+    if alleles is not None:
+        alleles_sorted = dict(sorted(alleles.items()))
+    else:
+        alleles_sorted = {}
+
+    alleles = {'mlst_alleles': str(alleles_sorted)}
 
     return alleles
 
 
-def collect_mlst_results(mlst_output_dir, sample_id):
-    mlst_results = {}
-    sequence_type = parse_mlst_sequence_type(os.path.join(mlst_output_dir, sample_id + '_sequence_type.csv'))
-    mlst_results.update(sequence_type)
+def collect_mlst_results(mlst_output_dir):
+    mlst_results_by_sample_id = {}
 
-    alleles = parse_mlst_alleles(os.path.join(mlst_output_dir, sample_id + '_mlst.json'))
-    mlst_results.update(alleles)
+    sequence_type_by_sample_id = {}
+    sequence_type_files = glob.glob(os.path.join(mlst_output_dir, '*', '*_sequence_type.csv'))
+    for sequence_type_file in sequence_type_files:
+        sample_id = os.path.basename(sequence_type_file).split('_')[0]
+        sequence_type = parse_mlst_sequence_type(sequence_type_file)
+        sequence_type_by_sample_id[sample_id] = sequence_type
 
-    mlst_provenance_files = glob.glob(os.path.join(mlst_output_dir, sample_id + '*' + '_provenance.yml'))
-    latest_mlst_provenance_file = mlst_provenance_files[-1]
-    mlst_provenance = parse_provenance(latest_mlst_provenance_file)
-    for provenance_item in mlst_provenance:
-        if 'pipeline_name' in provenance_item:
-            mlst_results['mlst_pipeline_name'] = provenance_item['pipeline_name']
-            mlst_results['mlst_pipeline_version'] = provenance_item['pipeline_version']
+    mlst_results_by_sample_id = sequence_type_by_sample_id.copy()
 
-    return mlst_results
+    mlst_alleles_by_sample_id = {}
+    mlst_alleles_files = sequence_type_files = glob.glob(os.path.join(mlst_output_dir, '*', '*_mlst.json'))
+    for mlst_alleles_file in mlst_alleles_files:
+        sample_id = os.path.basename(mlst_alleles_file).split('_')[0]
+        alleles = parse_mlst_alleles(mlst_alleles_file)
+        mlst_alleles_by_sample_id[sample_id] = alleles
+
+    for k, v in mlst_alleles_by_sample_id.items():
+        mlst_results_by_sample_id[k].update(mlst_alleles_by_sample_id[k])
+
+    mlst_provenance_files = glob.glob(os.path.join(mlst_output_dir, '*', '*_provenance.yml'))
+    mlst_provenance_by_sample_id = {}
+    for mlst_provenance_file in mlst_provenance_files:
+        sample_id = os.path.basename(mlst_provenance_file).split('_')[0]
+        parsed_mlst_provenance = parse_mlst_provenance(mlst_provenance_file)
+        mlst_provenance_by_sample_id[sample_id] = parsed_mlst_provenance
+
+    for k, v in mlst_provenance_by_sample_id.items():
+        mlst_results_by_sample_id[k].update(mlst_provenance_by_sample_id[k])
+
+    return mlst_results_by_sample_id
+
 
 def parse_top_species(top_species_csv_path):
     top_species = {}
@@ -91,36 +143,48 @@ def parse_top_species(top_species_csv_path):
         'unclassified_fraction_total_reads': 'species_unclassified_percent',
 
     }
-    with open(top_species_csv_path, 'r') as f:
-        reader = csv.DictReader(f, dialect='unix')
-        for row in reader:
-            for original_field, output_field in fields_to_collect.items():
-                top_species[output_field] = row[original_field]
+    null_output = {x: 'NA' for x in fields_to_collect.values()}
+
+    try:
+        with open(top_species_csv_path, 'r') as f:
+            reader = csv.DictReader(f, dialect='unix')
+            for row in reader:
+                for original_field, output_field in fields_to_collect.items():
+                    top_species[output_field] = row[original_field]
+    except FileNotFoundError as e:
+        top_species = null_output
 
     return top_species
 
 
-def collect_taxon_abundance_results(taxon_abundance_output_dir, sample_id):
-    taxon_abundance_results = {}
-    top_species = parse_top_species(os.path.join(taxon_abundance_output_dir, sample_id + '_S_top_5.csv'))
-    taxon_abundance_results.update(top_species)
+def collect_taxon_abundance_results(taxon_abundance_output_dir):
+    taxon_abundance_results_by_sample_id = {}
+    top_species_files = glob.glob(os.path.join(taxon_abundance_output_dir, '*', '*_S_top_5.csv'))
+    top_species_by_sample_id = {}
+    for top_species_file in top_species_files:
+        sample_id = os.path.basename(top_species_file).split('_')[0]
+        top_species = parse_top_species(top_species_file)
+        top_species_by_sample_id[sample_id] = top_species
 
+    taxon_abundance_results_by_sample_id = top_species_by_sample_id.copy()
 
-    taxon_abundance_provenance_files = glob.glob(os.path.join(taxon_abundance_output_dir, sample_id + '*' + '_provenance.yml'))
-    latest_taxon_abundance_provenance_file = taxon_abundance_provenance_files[-1]
-    taxon_abundance_provenance = parse_provenance(latest_taxon_abundance_provenance_file)
-    for provenance_item in taxon_abundance_provenance:
-        if 'pipeline_name' in provenance_item:
-            taxon_abundance_results['species_pipeline_name'] = provenance_item['pipeline_name']
-            taxon_abundance_results['species_pipeline_version'] = provenance_item['pipeline_version']
+    taxon_abundance_provenance_files = glob.glob(os.path.join(taxon_abundance_output_dir, '*', '*_provenance.yml'))
+    taxon_abundance_provenance_by_sample_id = {}
+    for taxon_abundance_provenance_file in taxon_abundance_provenance_files:
+        sample_id = os.path.basename(taxon_abundance_provenance_file).split('_')[0]
+        parsed_taxon_abundance_provenance = parse_taxon_abundance_provenance(taxon_abundance_provenance_file)
+        taxon_abundance_provenance_by_sample_id[sample_id] = parsed_taxon_abundance_provenance
 
-    return taxon_abundance_results
+    for k, v in taxon_abundance_provenance_by_sample_id.items():
+        taxon_abundance_results_by_sample_id[k].update(taxon_abundance_provenance_by_sample_id[k])
+    
+
+    return taxon_abundance_results_by_sample_id
 
 
 def parse_resistance_gene_report(resistance_gene_report_tsv_path):
     resistance_genes = []
     fields_to_collect = {
-        'sample_id':                             'sample_id',
         'resistance_gene_id':                    'resistance_gene_id',
         'resistance_gene_contig_id':             'resistance_gene_contig_id',
         'resistance_gene_contig_size':           'resistance_gene_contig_size',
@@ -135,31 +199,41 @@ def parse_resistance_gene_report(resistance_gene_report_tsv_path):
         'alignment_ref_plasmid':                 'plasmid_alignment_ref',
         'depth_coverage_threshold':              'plasmid_alignment_depth_threshold',
         'percent_ref_plasmid_coverage_above_depth_threshold': 'plasmid_alignment_percent_coverage_above_depth_threshold',
-        'num_snps_vs_ref_plasmid':                              'plasmid_alignment_num_snps',
+        'num_snps_vs_ref_plasmid':               'plasmid_alignment_num_snps',
     }
-    with open(resistance_gene_report_tsv_path, 'r') as f:
-        reader = csv.DictReader(f, dialect='excel-tab')
-        for row in reader:
-            gene = {}
-            for original_field, output_field in fields_to_collect.items():
-                gene[output_field] = row[original_field]
-            resistance_genes.append(gene)
+    null_output = {x: 'NA' for x in fields_to_collect.values()}
+
+    try:
+        with open(resistance_gene_report_tsv_path, 'r') as f:
+            reader = csv.DictReader(f, dialect='excel-tab')
+            for row in reader:
+                gene = {}
+                for original_field, output_field in fields_to_collect.items():
+                    gene[output_field] = row[original_field]
+                resistance_genes.append(gene)
+    except FileNotFoundError as e:
+        resistance_genes = [null_output]
 
     return resistance_genes
 
 
-def collect_plasmid_results(plasmid_screen_output_dir, sample_id):
-    plasmid_results = []
-    resistance_genes = parse_resistance_gene_report(os.path.join(plasmid_screen_output_dir, sample_id + '_resistance_gene_report.tsv'))
-    plasmid_results += resistance_genes
+def collect_plasmid_results(plasmid_screen_output_dir):
+    plasmid_results_by_sample_id = {}
+    resistance_gene_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_resistance_gene_report.tsv'))
+    for resistance_gene_report_file in resistance_gene_report_files:
+        sample_id = os.path.basename(resistance_gene_report_file).split('_')[0]
+        resistance_genes = parse_resistance_gene_report(resistance_gene_report_file)
+        plasmid_results_by_sample_id[sample_id] = resistance_genes
+    
 
-    return plasmid_results
+    return plasmid_results_by_sample_id
 
 
 def parse_fastp_csv(fastp_csv_path):
     fastp_stats = {}
     fields_to_collect = {
         'total_reads_before_filtering':       'total_reads',
+        'total_bases_before_filtering':       'total_bases',
         'read1_mean_length_before_filtering': 'read1_mean_length',
         'read2_mean_length_before_filtering': 'read2_mean_length',
         'q30_rate_before_filtering':          'q30_rate',
@@ -167,7 +241,6 @@ def parse_fastp_csv(fastp_csv_path):
     with open(fastp_csv_path, 'r') as f:
         reader = csv.DictReader(f, dialect='unix')
         for row in reader:
-            # print(json.dumps(row, indent=2))
             for original_field, output_field in fields_to_collect.items():
                 fastp_stats[output_field] = row[original_field]
     return fastp_stats
@@ -179,81 +252,109 @@ def parse_quast_csv(quast_csv_path):
         'total_length': 'assembly_total_length',
         'num_contigs':  'assembly_num_contigs',
         'assembly_N50': 'assembly_N50',
+        'assembly_N75': 'assembly_N75',
     }
     with open(quast_csv_path, 'r') as f:
         reader = csv.DictReader(f, dialect='unix')
         for row in reader:
-            # print(json.dumps(row, indent=2))
             for original_field, output_field in fields_to_collect.items():
                 quast_stats[output_field] = row[original_field]
     return quast_stats
 
 
-def collect_assembly_results(assembly_output_dir, sample_id, assembler):
-    assembly_results = {}
+def collect_assembly_results(assembly_output_dir, assembler):
+    assembly_results_by_sample_id = {}
 
-    fastp_stats = parse_fastp_csv(os.path.join(assembly_output_dir, sample_id + '_fastp.csv'))
-    assembly_results.update(fastp_stats)
-
-    quast_stats = parse_quast_csv(os.path.join(assembly_output_dir, sample_id + '_' + assembler + '_quast.csv'))
-    assembly_results.update(quast_stats)
-
-    assembly_provenance_files = glob.glob(os.path.join(assembly_output_dir, sample_id + '*' + '_provenance.yml'))
-    latest_assembly_provenance_file = assembly_provenance_files[-1]
+    fastp_stats_files = glob.glob(os.path.join(assembly_output_dir, '*', '*_fastp.csv'))
     
-    assembly_provenance = parse_provenance(latest_assembly_provenance_file)
-    for provenance_item in assembly_provenance:
-        if 'pipeline_name' in provenance_item:
-            assembly_results['assembly_pipeline_name'] = provenance_item['pipeline_name']
-            assembly_results['assembly_pipeline_version'] = provenance_item['pipeline_version']
-            assembly_results['assembly_tool_name'] = assembler
+    fastp_stats_by_sample_id = {}
+    for fastp_stats_file in fastp_stats_files:
+        sample_id = os.path.basename(fastp_stats_file).split('_')[0]
+        fastp_stats_by_sample_id[sample_id] = parse_fastp_csv(fastp_stats_file)
     
-    return assembly_results
+    assembly_results_by_sample_id = fastp_stats_by_sample_id.copy()
+
+    quast_stats_by_sample_id = {}
+    quast_stats_files = glob.glob(os.path.join(assembly_output_dir, '*', '*_' + assembler + '*_quast.csv'))
+    for quast_stats_file in quast_stats_files:
+        sample_id = os.path.basename(quast_stats_file).split('_')[0]
+        quast_stats_by_sample_id[sample_id] = parse_quast_csv(quast_stats_file)
+
+    for k, v in assembly_results_by_sample_id.items():
+        assembly_results_by_sample_id[k].update(quast_stats_by_sample_id[k])
+
+    assembly_provenance_files = glob.glob(os.path.join(assembly_output_dir, '*', '*_provenance.yml'))
+    
+    # latest_assembly_provenance_file = assembly_provenance_files[-1]
+    
+    assembly_provenance_by_sample_id = {}
+    for assembly_provenance_file in assembly_provenance_files:
+        sample_id = os.path.basename(assembly_provenance_file).split('_')[0]
+        parsed_assembly_provenance = parse_assembly_provenance(assembly_provenance_file)
+        assembly_provenance_by_sample_id[sample_id] = parsed_assembly_provenance
+
+    for k, v in assembly_results_by_sample_id.items():
+        assembly_results_by_sample_id[k].update(assembly_provenance_by_sample_id[k])
+    
+    return assembly_results_by_sample_id
     
 
 def main(args):
-    output = {}
-        
-    if not args.sample_id:
-        sample_id = os.path.basename(args.analysis_dir.rstrip('/'))
-    else:
-        sample_id = args.sample_id
-
-    output['sample_id'] = sample_id
+    core_output = []
+    plasmid_output = []
+    sequencing_run_id = os.path.basename(args.analysis_dir)
     
-    assembly_output_dirname = 'routine-assembly-v0.2-output'
-    assembly_output_subdir = os.path.join(args.analysis_dir, assembly_output_dirname)
-    assembly_results = collect_assembly_results(assembly_output_subdir, sample_id, args.assembler)
-    output.update(assembly_results)
+    assembly_output_dirname = 'routine-assembly-v0.4-output'
+    assembly_output_subdir = os.path.join(args.analysis_dir, args.assembly_mode, assembly_output_dirname)
+    assembly_results_by_sample_id = collect_assembly_results(assembly_output_subdir, args.assembler)
+    
+    core_results_by_sample_id = assembly_results_by_sample_id.copy()
 
     mlst_output_dirname = 'mlst-nf-v0.1-output'
-    mlst_output_subdir = os.path.join(args.analysis_dir, mlst_output_dirname)
-    mlst_results = collect_mlst_results(mlst_output_subdir, sample_id)
-    output.update(mlst_results)
+    mlst_output_subdir = os.path.join(args.analysis_dir, args.assembly_mode, mlst_output_dirname)
+    mlst_results_by_sample_id = collect_mlst_results(mlst_output_subdir)
+
+    for k, v in mlst_results_by_sample_id.items():
+        core_results_by_sample_id[k].update(mlst_results_by_sample_id[k])
 
     taxon_abundance_output_dirname = 'taxon-abundance-v0.1-output'
-    taxon_abundance_output_subdir = os.path.join(args.analysis_dir, taxon_abundance_output_dirname)
-    taxon_abundance_results = collect_taxon_abundance_results(taxon_abundance_output_subdir, sample_id)
-    output.update(taxon_abundance_results)
+    taxon_abundance_output_subdir = os.path.join(args.analysis_dir, args.assembly_mode, taxon_abundance_output_dirname)
+    taxon_abundance_results_by_sample_id = collect_taxon_abundance_results(taxon_abundance_output_subdir)
 
-    plasmid_outputs = []
+    for k, v in taxon_abundance_results_by_sample_id.items():
+        core_results_by_sample_id[k].update(taxon_abundance_results_by_sample_id[k])
+
+    plasmid_results_by_sample_id = {}
     plasmid_screen_output_dirname = 'plasmid-screen-v0.2-output'
-    plasmid_screen_output_subdir = os.path.join(args.analysis_dir, plasmid_screen_output_dirname)
-    plasmid_screen_results = collect_plasmid_results(plasmid_screen_output_subdir, sample_id)
-    plasmid_outputs += plasmid_screen_results
-    
+    plasmid_screen_output_subdir = os.path.join(args.analysis_dir, args.assembly_mode, plasmid_screen_output_dirname)
+    plasmid_screen_results_by_sample_id = collect_plasmid_results(plasmid_screen_output_subdir)
+
+    plasmid_results_by_sample_id = plasmid_screen_results_by_sample_id.copy()
+
+
+    for k, v in core_results_by_sample_id.items():
+        v['sequencing_run_id'] = sequencing_run_id
+        v['library_id'] = k
+        v['assembly_tool_name'] = args.assembler
+        v['assembly_mode'] = args.assembly_mode
+        core_output.append(v)
+
     output_fieldnames = [
-        'sample_id',
+        'sequencing_run_id',
+        'library_id',
         'total_reads',
+        'total_bases',
         'read1_mean_length',
         'read2_mean_length',
         'q30_rate',
         'assembly_total_length',
         'assembly_num_contigs',
         'assembly_N50',
+        'assembly_N75',
         'assembly_pipeline_name',
         'assembly_pipeline_version',
         'assembly_tool_name',
+        'assembly_mode',
         'mlst_scheme',
         'mlst_sequence_type',
         'mlst_score',
@@ -275,16 +376,29 @@ def main(args):
         output_writer = csv.DictWriter(sys.stdout, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
         if not args.noheader:
             output_writer.writeheader()
-        output_writer.writerow(output)
+        for o in core_output:
+            output_writer.writerow(o)
     else:
         with open(args.output, 'w') as f:
             output_writer = csv.DictWriter(f, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
             if not args.noheader:
                 output_writer.writeheader()
-            output_writer.writerow(output)
+            for o in core_output:
+                output_writer.writerow(o)
+
+    for k, vs in plasmid_results_by_sample_id.items():
+        for v in vs:
+            v['sequencing_run_id'] = sequencing_run_id
+            v['library_id'] = k
+            v['assembly_tool_name'] = args.assembler
+            v['assembly_mode'] = args.assembly_mode
+            plasmid_output.append(v)
 
     plasmid_output_fieldnames = [
-        'sample_id',
+        'sequencing_run_id',
+        'library_id',
+        'assembly_tool_name',
+        'assembly_mode',
         'resistance_gene_id',
         'resistance_gene_contig_id',
         'resistance_gene_contig_size',
@@ -302,18 +416,25 @@ def main(args):
         'plasmid_alignment_num_snps',
     ]
 
-    with open(args.plasmid_output, 'w') as f:
-        plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
-        if not args.noheader:
-            plasmid_output_writer.writeheader()
-        for plasmid_output in plasmid_outputs:    
-            plasmid_output_writer.writerow(plasmid_output)
+    written_plasmid_rows = set()
+    if args.plasmid_output:
+        with open(args.plasmid_output, 'w') as f:
+            plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+            if not args.noheader:
+                plasmid_output_writer.writeheader()
+            for o in plasmid_output:
+                library_id_resistance_gene_pair = o['library_id'] + '-' + o['resistance_gene_id']
+                if library_id_resistance_gene_pair not in written_plasmid_rows:
+                    plasmid_output_writer.writerow(o)
+                    written_plasmid_rows.add(library_id_resistance_gene_pair)
+                else:
+                    print("duplicate plasmid output: " + library_id_resistance_gene_pair, file=sys.stderr)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--sample-id')
     parser.add_argument('-d', '--analysis-dir')
     parser.add_argument('-a', '--assembler', default='unicycler')
+    parser.add_argument('--assembly-mode', default='short')
     parser.add_argument('--noheader', action='store_true')
     parser.add_argument('--output')
     parser.add_argument('--plasmid-output')
