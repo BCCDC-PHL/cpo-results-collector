@@ -302,139 +302,147 @@ def collect_assembly_results(assembly_output_dir, assembler):
 def main(args):
     core_output = []
     plasmid_output = []
+    assembly_modes = [
+        'short',
+        'hybrid',
+    ]
+
     sequencing_run_id = os.path.basename(args.analysis_dir)
-    
-    assembly_output_dirname = 'routine-assembly-v0.4-output'
-    assembly_output_subdir = os.path.join(args.analysis_dir, args.assembly_mode, assembly_output_dirname)
-    assembly_results_by_sample_id = collect_assembly_results(assembly_output_subdir, args.assembler)
-    
-    core_results_by_sample_id = assembly_results_by_sample_id.copy()
 
-    mlst_output_dirname = 'mlst-nf-v0.1-output'
-    mlst_output_subdir = os.path.join(args.analysis_dir, args.assembly_mode, mlst_output_dirname)
-    mlst_results_by_sample_id = collect_mlst_results(mlst_output_subdir)
+    for assembly_mode in assembly_modes:
+        assembly_mode_output_dir = os.path.join(args.analysis_dir, assembly_mode)
 
-    for k, v in mlst_results_by_sample_id.items():
-        core_results_by_sample_id[k].update(mlst_results_by_sample_id[k])
+        if os.path.exists(assembly_mode_output_dir):
+            assembly_output_dirname = 'routine-assembly-v0.4-output'
+            assembly_output_subdir = os.path.join(assembly_mode_output_dir, assembly_output_dirname)
+            assembly_results_by_sample_id = collect_assembly_results(assembly_output_subdir, args.assembler)
 
-    taxon_abundance_output_dirname = 'taxon-abundance-v0.1-output'
-    taxon_abundance_output_subdir = os.path.join(args.analysis_dir, args.assembly_mode, taxon_abundance_output_dirname)
-    taxon_abundance_results_by_sample_id = collect_taxon_abundance_results(taxon_abundance_output_subdir)
+            core_results_by_sample_id = assembly_results_by_sample_id.copy()
 
-    for k, v in taxon_abundance_results_by_sample_id.items():
-        core_results_by_sample_id[k].update(taxon_abundance_results_by_sample_id[k])
+            mlst_output_dirname = 'mlst-nf-v0.1-output'
+            mlst_output_subdir = os.path.join(assembly_mode_output_dir, mlst_output_dirname)
+            mlst_results_by_sample_id = collect_mlst_results(mlst_output_subdir)
 
-    plasmid_results_by_sample_id = {}
-    plasmid_screen_output_dirname = 'plasmid-screen-v0.2-output'
-    plasmid_screen_output_subdir = os.path.join(args.analysis_dir, args.assembly_mode, plasmid_screen_output_dirname)
-    plasmid_screen_results_by_sample_id = collect_plasmid_results(plasmid_screen_output_subdir)
+            for k, v in mlst_results_by_sample_id.items():
+                core_results_by_sample_id[k].update(mlst_results_by_sample_id[k])
 
-    plasmid_results_by_sample_id = plasmid_screen_results_by_sample_id.copy()
+            taxon_abundance_output_dirname = 'taxon-abundance-v0.1-output'
+            taxon_abundance_output_subdir = os.path.join(assembly_mode_output_dir, taxon_abundance_output_dirname)
+            taxon_abundance_results_by_sample_id = collect_taxon_abundance_results(taxon_abundance_output_subdir)
+
+            for k, v in taxon_abundance_results_by_sample_id.items():
+                core_results_by_sample_id[k].update(taxon_abundance_results_by_sample_id[k])
+
+            plasmid_results_by_sample_id = {}
+            plasmid_screen_output_dirname = 'plasmid-screen-v0.2-output'
+            plasmid_screen_output_subdir = os.path.join(assembly_mode_output_dir, plasmid_screen_output_dirname)
+            plasmid_screen_results_by_sample_id = collect_plasmid_results(plasmid_screen_output_subdir)
+
+            plasmid_results_by_sample_id = plasmid_screen_results_by_sample_id.copy()
 
 
-    for k, v in core_results_by_sample_id.items():
-        v['sequencing_run_id'] = sequencing_run_id
-        v['library_id'] = k
-        v['assembly_tool_name'] = args.assembler
-        v['assembly_mode'] = args.assembly_mode
-        core_output.append(v)
+            for k, v in core_results_by_sample_id.items():
+                v['sequencing_run_id'] = sequencing_run_id
+                v['library_id'] = k
+                v['assembly_tool_name'] = args.assembler
+                v['assembly_mode'] = assembly_mode
+                core_output.append(v)
 
-    output_fieldnames = [
-        'sequencing_run_id',
-        'library_id',
-        'total_reads',
-        'total_bases',
-        'read1_mean_length',
-        'read2_mean_length',
-        'q30_rate',
-        'assembly_total_length',
-        'assembly_num_contigs',
-        'assembly_N50',
-        'assembly_N75',
-        'assembly_pipeline_name',
-        'assembly_pipeline_version',
-        'assembly_tool_name',
-        'assembly_mode',
-        'mlst_scheme',
-        'mlst_sequence_type',
-        'mlst_score',
-        'mlst_alleles',
-        'mlst_pipeline_name',
-        'mlst_pipeline_version',
-        'species_1_name',
-        'species_1_taxid',
-        'species_1_percent',
-        'species_2_name',
-        'species_2_taxid',
-        'species_2_percent',
-        'species_unclassified_percent',
-        'species_pipeline_name',
-        'species_pipeline_version',
-    ]
+            output_fieldnames = [
+                'sequencing_run_id',
+                'library_id',
+                'total_reads',
+                'total_bases',
+                'read1_mean_length',
+                'read2_mean_length',
+                'q30_rate',
+                'assembly_total_length',
+                'assembly_num_contigs',
+                'assembly_N50',
+                'assembly_N75',
+                'assembly_pipeline_name',
+                'assembly_pipeline_version',
+                'assembly_tool_name',
+                'assembly_mode',
+                'mlst_scheme',
+                'mlst_sequence_type',
+                'mlst_score',
+                'mlst_alleles',
+                'mlst_pipeline_name',
+                'mlst_pipeline_version',
+                'species_1_name',
+                'species_1_taxid',
+                'species_1_percent',
+                'species_2_name',
+                'species_2_taxid',
+                'species_2_percent',
+                'species_unclassified_percent',
+                'species_pipeline_name',
+                'species_pipeline_version',
+            ]
 
-    if not args.output:
-        output_writer = csv.DictWriter(sys.stdout, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
-        if not args.noheader:
-            output_writer.writeheader()
-        for o in core_output:
-            output_writer.writerow(o)
-    else:
-        with open(args.output, 'w') as f:
-            output_writer = csv.DictWriter(f, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
-            if not args.noheader:
-                output_writer.writeheader()
-            for o in core_output:
-                output_writer.writerow(o)
+            if not args.output:
+                output_writer = csv.DictWriter(sys.stdout, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+                if not args.noheader:
+                    output_writer.writeheader()
+                for o in core_output:
+                    output_writer.writerow(o)
+            else:
+                with open(args.output, 'w') as f:
+                    output_writer = csv.DictWriter(f, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+                    if not args.noheader:
+                        output_writer.writeheader()
+                    for o in core_output:
+                        output_writer.writerow(o)
 
-    for k, vs in plasmid_results_by_sample_id.items():
-        for v in vs:
-            v['sequencing_run_id'] = sequencing_run_id
-            v['library_id'] = k
-            v['assembly_tool_name'] = args.assembler
-            v['assembly_mode'] = args.assembly_mode
-            plasmid_output.append(v)
+            for k, vs in plasmid_results_by_sample_id.items():
+                for v in vs:
+                    v['sequencing_run_id'] = sequencing_run_id
+                    v['library_id'] = k
+                    v['assembly_tool_name'] = args.assembler
+                    v['assembly_mode'] = assembly_mode
+                    plasmid_output.append(v)
 
-    plasmid_output_fieldnames = [
-        'sequencing_run_id',
-        'library_id',
-        'assembly_tool_name',
-        'assembly_mode',
-        'resistance_gene_id',
-        'resistance_gene_contig_id',
-        'resistance_gene_contig_size',
-        'resistance_gene_percent_coverage',
-        'resistance_gene_percent_identity',
-        'plasmid_num_contigs',
-        'plasmid_size',
-        'plasmid_replicon_types',
-        'plasmid_mob_suite_primary_cluster_id',
-        'plasmid_mob_suite_secondary_cluster_id',
-        'plasmid_mash_nearest_neighbor',
-        'plasmid_alignment_ref',
-        'plasmid_alignment_depth_threshold',
-        'plasmid_alignment_percent_coverage_above_depth_threshold',
-        'plasmid_alignment_num_snps',
-    ]
+            plasmid_output_fieldnames = [
+                'sequencing_run_id',
+                'library_id',
+                'assembly_tool_name',
+                'assembly_mode',
+                'resistance_gene_id',
+                'resistance_gene_contig_id',
+                'resistance_gene_contig_size',
+                'resistance_gene_percent_coverage',
+                'resistance_gene_percent_identity',
+                'plasmid_num_contigs',
+                'plasmid_size',
+                'plasmid_replicon_types',
+                'plasmid_mob_suite_primary_cluster_id',
+                'plasmid_mob_suite_secondary_cluster_id',
+                'plasmid_mash_nearest_neighbor',
+                'plasmid_alignment_ref',
+                'plasmid_alignment_depth_threshold',
+                'plasmid_alignment_percent_coverage_above_depth_threshold',
+                'plasmid_alignment_num_snps',
+            ]
 
-    written_plasmid_rows = set()
-    if args.plasmid_output:
-        with open(args.plasmid_output, 'w') as f:
-            plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
-            if not args.noheader:
-                plasmid_output_writer.writeheader()
-            for o in plasmid_output:
-                library_id_resistance_gene_pair = o['library_id'] + '-' + o['resistance_gene_id']
-                if library_id_resistance_gene_pair not in written_plasmid_rows:
-                    plasmid_output_writer.writerow(o)
-                    written_plasmid_rows.add(library_id_resistance_gene_pair)
-                else:
-                    print("duplicate plasmid output: " + library_id_resistance_gene_pair, file=sys.stderr)
+            written_plasmid_rows = set()
+            if args.plasmid_output:
+                with open(args.plasmid_output, 'w') as f:
+                    plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+                    if not args.noheader:
+                        plasmid_output_writer.writeheader()
+                    for o in plasmid_output:
+                        library_id_resistance_gene_assembly_mode_trio = o['library_id'] + '-' + o['resistance_gene_id'] + o['assembly_mode']
+                        if library_id_resistance_gene_assembly_mode_trio not in written_plasmid_rows:
+                            plasmid_output_writer.writerow(o)
+                            written_plasmid_rows.add(library_id_resistance_gene_assembly_mode_trio)
+                        else:
+                            print("duplicate plasmid output: " + library_id_resistance_gene_assembly_mode_trio, file=sys.stderr)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--analysis-dir')
     parser.add_argument('-a', '--assembler', default='unicycler')
-    parser.add_argument('--assembly-mode', default='short')
     parser.add_argument('--noheader', action='store_true')
     parser.add_argument('--output')
     parser.add_argument('--plasmid-output')
