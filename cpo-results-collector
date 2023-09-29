@@ -5,12 +5,45 @@ import csv
 import glob
 import json
 import os
+import re
 import sys
 import yaml
 
 
 def jdump(x):
     print(json.dumps(x, indent=2))
+
+
+def join_indexed_dicts(dict_1, dict_2):
+    """
+    dict_1 is a dict of dicts, where the keys of the outer dict are the index
+    dict_2 is a dict of dicts, where the keys of the outer dict are the index
+    Returns a dict of dicts, where the keys of the outer dict are the index, and the values are the union of the inner dicts
+
+    :param dict_1: dict of dicts
+    :param dict_2: dict of dicts
+    :return: dict of dicts
+    :rtype: dict
+    """
+    joined_dict = {}
+    if not dict_1:
+        return dict_2
+    if not dict_2:
+        return dict_1
+    dict_1_index = set(dict_1.keys())
+    dict_2_keys = list(dict_2.values())[0].keys()
+    
+    for k in dict_1_index:
+        joined_dict[k] = dict_1[k]
+    for k in dict_1_index:
+        if k in dict_2.keys():
+            for k2 in dict_2_keys:
+                joined_dict[k][k2] = dict_2[k][k2]
+        else:
+            for k2 in dict_2_keys:
+                joined_dict[k][k2] = None
+            
+    return joined_dict
 
 
 def parse_provenance(provenance_path):
@@ -61,7 +94,47 @@ def parse_taxon_abundance_provenance(provenance_path):
             taxon_abundance_provenance['species_pipeline_version'] = provenance_item['pipeline_version']
 
     return taxon_abundance_provenance
+
+
+def parse_qc_summary(qc_summary_path):
+    qc_summary = {}
+    with open(qc_summary_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='unix')
+        for row in reader:
+            library_id = row['library_id']
+            qc = {'library_id': library_id}
+            try:
+                qc['total_bases_input_short'] = int(row['total_bases_input'])
+            except ValueError as e:
+                row['total_bases_input'] = None
+            if 'total_bases_input_long' in row.keys():
+                try:
+                    qc['total_bases_input_long'] = int(row['total_bases_input_long'])
+                except ValueError as e:
+                    qc['total_bases_input_long'] = None
+            else:
+                qc['total_bases_input_long'] = 0
+            if 'total_bases_input_pass_fail' in row.keys():
+                qc['total_bases_input_short_pass_fail'] = row['total_bases_input_pass_fail']
+            if 'total_bases_input_long_pass_fail' in row.keys():
+                qc['total_bases_input_long_pass_fail'] = row['total_bases_input_long_pass_fail']
+            else:
+                qc['total_bases_input_long_pass_fail'] = None
+
+            if qc['total_bases_input_long_pass_fail'] == None:
+                qc['overall_pass_fail'] = qc['total_bases_input_short_pass_fail']
+            else:
+                qc['overall_pass_fail'] = 'FAIL'
+                qc_checks = [qc[field] for field in ['total_bases_input_long_pass_fail', 'total_bases_input_short_pass_fail']]
+                if not any([x == 'FAIL' for x in qc_checks]):
+                    qc['overall_pass_fail'] = 'WARN'
+                if all([x == 'PASS' for x in qc_checks]):
+                    qc['overall_pass_fail'] = 'PASS'
             
+            qc_summary[library_id] = qc
+
+    return qc_summary
+
 
 def parse_mlst_sequence_type(mlst_sequence_type_csv_path):
     sequence_type = {}
@@ -177,7 +250,6 @@ def collect_taxon_abundance_results(taxon_abundance_output_dir):
 
     for k, v in taxon_abundance_provenance_by_sample_id.items():
         taxon_abundance_results_by_sample_id[k].update(taxon_abundance_provenance_by_sample_id[k])
-    
 
     return taxon_abundance_results_by_sample_id
 
@@ -224,7 +296,6 @@ def collect_plasmid_results(plasmid_screen_output_dir):
         sample_id = os.path.basename(resistance_gene_report_file).split('_')[0]
         resistance_genes = parse_resistance_gene_report(resistance_gene_report_file)
         plasmid_results_by_sample_id[sample_id] = resistance_genes
-    
 
     return plasmid_results_by_sample_id
 
@@ -232,21 +303,47 @@ def collect_plasmid_results(plasmid_screen_output_dir):
 def parse_fastp_csv(fastp_csv_path):
     fastp_stats = {}
     fields_to_collect = {
-        'total_reads_before_filtering':       'total_reads',
-        'total_bases_before_filtering':       'total_bases',
         'read1_mean_length_before_filtering': 'read1_mean_length',
         'read2_mean_length_before_filtering': 'read2_mean_length',
-        'q30_rate_before_filtering':          'q30_rate',
+        'q30_rate_before_filtering':          'q30_rate_short',
     }
     with open(fastp_csv_path, 'r') as f:
         reader = csv.DictReader(f, dialect='unix')
         for row in reader:
             for original_field, output_field in fields_to_collect.items():
                 fastp_stats[output_field] = row[original_field]
+
     return fastp_stats
 
 
+def parse_nanoq_csv(nanoq_csv_path):
+    """
+    Parse a nanoq csv file and return a dict of stats
+
+    :param nanoq_csv_path: path to nanoq csv file
+    :return: dict of stats.
+    :rtype: dict
+    """
+    nanoq_stats = {}
+    fields_to_collect = {
+    }
+    with open(nanoq_csv_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='unix')
+        for row in reader:
+            for original_field, output_field in fields_to_collect.items():
+                nanoq_stats[output_field] = row[original_field]
+
+    return nanoq_stats
+
+
 def parse_quast_csv(quast_csv_path):
+    """
+    Parse a quast csv file and return a dict of stats
+
+    :param quast_csv_path: path to quast csv file
+    :return: dict of stats. Keys are: ['assembly_total_length', 'assembly_num_contigs', 'assembly_N50', 'assembly_N75']
+    :rtype: dict
+    """
     quast_stats = {}
     fields_to_collect = {
         'total_length': 'assembly_total_length',
@@ -281,7 +378,15 @@ def collect_assembly_results(assembly_output_dir, assembler):
         quast_stats_by_sample_id[sample_id] = parse_quast_csv(quast_stats_file)
 
     for k, v in assembly_results_by_sample_id.items():
-        assembly_results_by_sample_id[k].update(quast_stats_by_sample_id[k])
+        if k in quast_stats_by_sample_id.keys():
+            assembly_results_by_sample_id[k].update(quast_stats_by_sample_id[k])
+        else:
+            assembly_results_by_sample_id[k].update({
+                'assembly_total_length': None,
+                'assembly_num_contigs': None,
+                'assembly_N50': None,
+                'assembly_N75': None,
+            })
 
     assembly_provenance_files = glob.glob(os.path.join(assembly_output_dir, '*', '*_provenance.yml'))
     
@@ -294,7 +399,13 @@ def collect_assembly_results(assembly_output_dir, assembler):
         assembly_provenance_by_sample_id[sample_id] = parsed_assembly_provenance
 
     for k, v in assembly_results_by_sample_id.items():
-        assembly_results_by_sample_id[k].update(assembly_provenance_by_sample_id[k])
+        if k in assembly_provenance_by_sample_id.keys():
+            assembly_results_by_sample_id[k].update(assembly_provenance_by_sample_id[k])
+        else:
+            assembly_results_by_sample_id[k].update({
+                'assembly_pipeline_name': None,
+                'assembly_pipeline_version': None,
+            })
     
     return assembly_results_by_sample_id
     
@@ -302,142 +413,275 @@ def collect_assembly_results(assembly_output_dir, assembler):
 def main(args):
     core_output = []
     plasmid_output = []
-    assembly_modes = [
-        'short',
-        'hybrid',
+
+    miseq_run_id_regex = r'^[0-9]{6}_M[0-9]{5}_[0-9]{4}_[02]{9}-[A-Z0-9]{5}$'
+    nextseq_run_id_regex = r'^[0-9]{6}_VH[0-9]{5}_[0-9]+_[A-Z0-9]{9}$'
+
+    gridion_run_id_regex = r'^[0-9]{8}_[0-9]{4}_X[0-9]_[A-Z0-9]{8}_[a-z0-9]{8}$'
+    promethion_run_id_regex = r'^[0-9]{8}_[0-9]{4}_P2S_[0-9]{5}-[0-9]_[A-Z0-9]{8}_[a-z0-9]{8}$'
+
+    sequencing_run_id = os.path.basename(args.analysis_dir.rstrip('/'))
+
+    instrument_type = None
+    if re.match(miseq_run_id_regex, sequencing_run_id) or re.match(nextseq_run_id_regex, sequencing_run_id):
+        instrument_type = 'illumina'
+    elif re.match(gridion_run_id_regex, sequencing_run_id) or re.match(promethion_run_id_regex, sequencing_run_id):
+        instrument_type = 'nanopore'
+
+    assembly_output_dirname = None
+    assembly_tool_name = None
+    assembly_mode = None
+    if instrument_type == 'illumina':
+        assembly_output_dirname = 'routine-assembly-v0.4-output'
+        assembly_tool_name = 'unicycler'
+        assembly_mode = 'short'
+    elif instrument_type == 'nanopore':
+        assembly_output_dirname = 'dragonflye-nf-v0.1-output'
+        assembly_tool_name = 'dragonflye'
+        assembly_mode = 'hybrid'
+
+    assembly_mode_output_dir = os.path.join(args.analysis_dir, assembly_mode)
+
+    qc_summary = {}
+    if os.path.exists(assembly_mode_output_dir):
+
+        qc_summary_path = os.path.join(assembly_mode_output_dir, sequencing_run_id + '_auto-cpo_qc_summary.csv')
+        
+        qc_summary_path = os.path.join(assembly_mode_output_dir, sequencing_run_id + '_auto-cpo_qc_summary.csv')
+
+        if os.path.exists(qc_summary_path):
+            qc_summary = parse_qc_summary(qc_summary_path)
+
+    core_results_by_sample_id = qc_summary.copy()
+
+    assembly_output_subdir = os.path.join(assembly_mode_output_dir, assembly_output_dirname)
+    assembly_results_by_sample_id = collect_assembly_results(assembly_output_subdir, assembly_tool_name)
+    for sample_id in assembly_results_by_sample_id.keys():
+        assembly_results_by_sample_id[sample_id]['assembly_mode'] = assembly_mode
+
+    core_results_by_sample_id = join_indexed_dicts(core_results_by_sample_id, assembly_results_by_sample_id)
+
+    mlst_output_dirname = 'mlst-nf-v0.1-output'
+    mlst_output_subdir = os.path.join(assembly_mode_output_dir, mlst_output_dirname)
+    mlst_results_by_sample_id = {}
+    if os.path.exists(mlst_output_subdir):
+        mlst_results_by_sample_id = collect_mlst_results(mlst_output_subdir)
+    else:
+        null_mlst_results = {
+            "mlst_scheme": None,
+            "mlst_sequence_type": None,
+            "mlst_score": None,
+            "mlst_alleles": None,
+            "mlst_pipeline_name": None,
+            "mlst_pipeline_version": None,
+        }
+        for sample_id in core_results_by_sample_id.keys():
+            mlst_results_by_sample_id[sample_id] = null_mlst_results
+
+    join_indexed_dicts(core_results_by_sample_id, mlst_results_by_sample_id)
+
+    taxon_abundance_output_dirname = 'taxon-abundance-v0.1-output'
+    taxon_abundance_output_subdir = os.path.join(assembly_mode_output_dir, taxon_abundance_output_dirname)
+    taxon_abundance_results_by_sample_id = {}
+    if os.path.exists(taxon_abundance_output_subdir):
+        taxon_abundance_results_by_sample_id = collect_taxon_abundance_results(taxon_abundance_output_subdir)
+    else:
+        null_taxon_abundance_results = {
+            "species_1_name": None,
+            "species_1_taxid": None,
+            "species_1_percent": None,
+            "species_2_name": None,
+            "species_2_taxid": None,
+            "species_2_percent": None,
+            "species_unclassified_percent": None,
+            "species_pipeline_name": None,
+            "species_pipeline_version": None,
+        }
+        for sample_id in core_results_by_sample_id.keys():
+            taxon_abundance_results_by_sample_id[sample_id] = null_taxon_abundance_results
+
+    core_results_by_sample_id = join_indexed_dicts(core_results_by_sample_id, taxon_abundance_results_by_sample_id)
+
+    plasmid_results_by_sample_id = {}
+    plasmid_screen_output_dirname = 'plasmid-screen-v0.2-output'
+    plasmid_screen_output_subdir = os.path.join(assembly_mode_output_dir, plasmid_screen_output_dirname)
+    plasmid_screen_results_by_sample_id = collect_plasmid_results(plasmid_screen_output_subdir)
+
+    plasmid_results_by_sample_id = plasmid_screen_results_by_sample_id.copy()
+
+    for k, v in core_results_by_sample_id.items():
+        v['sequencing_run_id'] = sequencing_run_id
+        v['library_id'] = k
+        v['assembly_tool_name'] = args.assembler
+        v['assembly_mode'] = assembly_mode
+        core_output.append(v)
+
+    output_fieldnames = [
+        'sequencing_run_id',
+        'library_id',
+        'total_bases_input_short',
+        'total_bases_input_short_pass_fail',
+        'total_bases_input_long',
+        'total_bases_input_long_pass_fail',
+        'overall_pass_fail',
+        'read1_mean_length',
+        'read2_mean_length',
+        'q30_rate_short',
+        'total_reads_long',
+        'total_bases_long',
+        'read_mean_length_long',
+        'read_n50_long',
+        'median_quality_long',
+        'assembly_total_length',
+        'assembly_num_contigs',
+        'assembly_N50',
+        'assembly_N75',
+        'assembly_pipeline_name',
+        'assembly_pipeline_version',
+        'assembly_tool_name',
+        'assembly_mode',
+        'mlst_scheme',
+        'mlst_sequence_type',
+        'mlst_score',
+        'mlst_alleles',
+        'mlst_pipeline_name',
+        'mlst_pipeline_version',
+        'species_1_name',
+        'species_1_taxid',
+        'species_1_percent',
+        'species_2_name',
+        'species_2_taxid',
+        'species_2_percent',
+        'species_unclassified_percent',
+        'species_pipeline_name',
+        'species_pipeline_version',
     ]
 
-    sequencing_run_id = os.path.basename(args.analysis_dir)
+    # Make sure that if the overall QC check fails, other outputs are set to None
+    for idx, line in enumerate(core_output):
+        sequencing_run_id = line['sequencing_run_id']
+        library_id = line['library_id']
+        total_bases_input_short = line['total_bases_input_short']
+        total_bases_input_short_pass_fail = line['total_bases_input_short_pass_fail']
+        total_bases_input_long = line['total_bases_input_long']
+        total_bases_input_long_pass_fail = line['total_bases_input_long_pass_fail']
+        overall_pass_fail = line['overall_pass_fail']
+        if overall_pass_fail == 'FAIL':
+            line = {k: None for k in line.keys()}
+            line['sequencing_run_id'] = sequencing_run_id
+            line['library_id'] = library_id
+            line['total_bases_input_short'] = total_bases_input_short
+            line['total_bases_input_short_pass_fail'] = total_bases_input_short_pass_fail
+            line['total_bases_input_long'] = total_bases_input_long
+            line['total_bases_input_long_pass_fail'] = total_bases_input_long_pass_fail
+            line['overall_pass_fail'] = overall_pass_fail
+            core_output[idx] = line
+            
+    if not args.output:
+        output_writer = csv.DictWriter(sys.stdout, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+        if not args.noheader:
+            output_writer.writeheader()
+        for o in core_output:
+            output_writer.writerow(o)
+    else:
+        with open(args.output, 'w') as f:
+            output_writer = csv.DictWriter(f, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+            if not args.noheader:
+                output_writer.writeheader()
+            for o in core_output:
+                output_writer.writerow(o)
 
-    for assembly_mode in assembly_modes:
-        assembly_mode_output_dir = os.path.join(args.analysis_dir, assembly_mode)
 
-        if os.path.exists(assembly_mode_output_dir):
-            assembly_output_dirname = 'routine-assembly-v0.4-output'
-            assembly_output_subdir = os.path.join(assembly_mode_output_dir, assembly_output_dirname)
-            assembly_results_by_sample_id = collect_assembly_results(assembly_output_subdir, args.assembler)
-
-            core_results_by_sample_id = assembly_results_by_sample_id.copy()
-
-            mlst_output_dirname = 'mlst-nf-v0.1-output'
-            mlst_output_subdir = os.path.join(assembly_mode_output_dir, mlst_output_dirname)
-            mlst_results_by_sample_id = collect_mlst_results(mlst_output_subdir)
-
-            for k, v in mlst_results_by_sample_id.items():
-                core_results_by_sample_id[k].update(mlst_results_by_sample_id[k])
-
-            taxon_abundance_output_dirname = 'taxon-abundance-v0.1-output'
-            taxon_abundance_output_subdir = os.path.join(assembly_mode_output_dir, taxon_abundance_output_dirname)
-            taxon_abundance_results_by_sample_id = collect_taxon_abundance_results(taxon_abundance_output_subdir)
-
-            for k, v in taxon_abundance_results_by_sample_id.items():
-                core_results_by_sample_id[k].update(taxon_abundance_results_by_sample_id[k])
-
-            plasmid_results_by_sample_id = {}
-            plasmid_screen_output_dirname = 'plasmid-screen-v0.2-output'
-            plasmid_screen_output_subdir = os.path.join(assembly_mode_output_dir, plasmid_screen_output_dirname)
-            plasmid_screen_results_by_sample_id = collect_plasmid_results(plasmid_screen_output_subdir)
-
-            plasmid_results_by_sample_id = plasmid_screen_results_by_sample_id.copy()
-
-
-            for k, v in core_results_by_sample_id.items():
-                v['sequencing_run_id'] = sequencing_run_id
-                v['library_id'] = k
-                v['assembly_tool_name'] = args.assembler
-                v['assembly_mode'] = assembly_mode
-                core_output.append(v)
-
-            output_fieldnames = [
-                'sequencing_run_id',
-                'library_id',
-                'total_reads',
-                'total_bases',
-                'read1_mean_length',
-                'read2_mean_length',
-                'q30_rate',
-                'assembly_total_length',
-                'assembly_num_contigs',
-                'assembly_N50',
-                'assembly_N75',
-                'assembly_pipeline_name',
-                'assembly_pipeline_version',
-                'assembly_tool_name',
-                'assembly_mode',
-                'mlst_scheme',
-                'mlst_sequence_type',
-                'mlst_score',
-                'mlst_alleles',
-                'mlst_pipeline_name',
-                'mlst_pipeline_version',
-                'species_1_name',
-                'species_1_taxid',
-                'species_1_percent',
-                'species_2_name',
-                'species_2_taxid',
-                'species_2_percent',
-                'species_unclassified_percent',
-                'species_pipeline_name',
-                'species_pipeline_version',
+    for k, v in core_results_by_sample_id.items():
+        if k in plasmid_results_by_sample_id.keys():
+            for plasmid_result in plasmid_results_by_sample_id[k]:
+                plasmid_result['total_bases_input_short'] = v['total_bases_input_short']
+                plasmid_result['total_bases_input_short_pass_fail'] = v['total_bases_input_short_pass_fail']
+                plasmid_result['total_bases_input_long'] = v['total_bases_input_long']
+                plasmid_result['total_bases_input_long_pass_fail'] = v['total_bases_input_long_pass_fail']
+                plasmid_result['overall_pass_fail'] = v['overall_pass_fail']
+        else:
+            plasmid_results_by_sample_id[k] = [
+                {
+                    'total_bases_input_short': v['total_bases_input_short'],
+                    'total_bases_input_short_pass_fail': v['total_bases_input_short_pass_fail'],
+                    'total_bases_input_long': v['total_bases_input_long'],
+                    'total_bases_input_long_pass_fail': v['total_bases_input_long_pass_fail'],
+                    'overall_pass_fail': v['overall_pass_fail'],
+                }
             ]
+            
+    for k, vs in plasmid_results_by_sample_id.items():
+        for v in vs:
+            v['sequencing_run_id'] = sequencing_run_id
+            v['library_id'] = k
+            v['assembly_tool_name'] = args.assembler
+            v['assembly_mode'] = assembly_mode
+            plasmid_output.append(v)
 
-            if not args.output:
-                output_writer = csv.DictWriter(sys.stdout, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
-                if not args.noheader:
-                    output_writer.writeheader()
-                for o in core_output:
-                    output_writer.writerow(o)
-            else:
-                with open(args.output, 'w') as f:
-                    output_writer = csv.DictWriter(f, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
-                    if not args.noheader:
-                        output_writer.writeheader()
-                    for o in core_output:
-                        output_writer.writerow(o)
+    plasmid_output_fieldnames = [
+        'sequencing_run_id',
+        'library_id',
+        'total_bases_input_short',
+        'total_bases_input_short_pass_fail',
+        'total_bases_input_long',
+        'total_bases_input_long_pass_fail',
+        'overall_pass_fail',
+        'assembly_tool_name',
+        'assembly_mode',
+        'resistance_gene_id',
+        'resistance_gene_contig_id',
+        'resistance_gene_contig_size',
+        'resistance_gene_percent_coverage',
+        'resistance_gene_percent_identity',
+        'plasmid_num_contigs',
+        'plasmid_size',
+        'plasmid_replicon_types',
+        'plasmid_mob_suite_primary_cluster_id',
+        'plasmid_mob_suite_secondary_cluster_id',
+        'plasmid_mash_nearest_neighbor',
+        'plasmid_alignment_ref',
+        'plasmid_alignment_depth_threshold',
+        'plasmid_alignment_percent_coverage_above_depth_threshold',
+        'plasmid_alignment_num_snps',
+    ]
 
-            for k, vs in plasmid_results_by_sample_id.items():
-                for v in vs:
-                    v['sequencing_run_id'] = sequencing_run_id
-                    v['library_id'] = k
-                    v['assembly_tool_name'] = args.assembler
-                    v['assembly_mode'] = assembly_mode
-                    plasmid_output.append(v)
+    for idx, line in enumerate(plasmid_output):
+        sequencing_run_id = line['sequencing_run_id']
+        library_id = line['library_id']
+        total_bases_input_short = line['total_bases_input_short']
+        total_bases_input_short_pass_fail = line['total_bases_input_short_pass_fail']
+        total_bases_input_long = line['total_bases_input_long']
+        total_bases_input_long_pass_fail = line['total_bases_input_long_pass_fail']
+        overall_pass_fail = line['overall_pass_fail']
+        if overall_pass_fail == 'FAIL':
+            line = {k: None for k in line.keys()}
+            line['sequencing_run_id'] = sequencing_run_id
+            line['library_id'] = library_id
+            line['total_bases_input_short'] = total_bases_input_short
+            line['total_bases_input_short_pass_fail'] = total_bases_input_short_pass_fail
+            line['total_bases_input_long'] = total_bases_input_long
+            line['total_bases_input_long_pass_fail'] = total_bases_input_long_pass_fail
+            line['overall_pass_fail'] = overall_pass_fail
+            plasmid_output[idx] = line
 
-            plasmid_output_fieldnames = [
-                'sequencing_run_id',
-                'library_id',
-                'assembly_tool_name',
-                'assembly_mode',
-                'resistance_gene_id',
-                'resistance_gene_contig_id',
-                'resistance_gene_contig_size',
-                'resistance_gene_percent_coverage',
-                'resistance_gene_percent_identity',
-                'plasmid_num_contigs',
-                'plasmid_size',
-                'plasmid_replicon_types',
-                'plasmid_mob_suite_primary_cluster_id',
-                'plasmid_mob_suite_secondary_cluster_id',
-                'plasmid_mash_nearest_neighbor',
-                'plasmid_alignment_ref',
-                'plasmid_alignment_depth_threshold',
-                'plasmid_alignment_percent_coverage_above_depth_threshold',
-                'plasmid_alignment_num_snps',
-            ]
-
-            written_plasmid_rows = set()
-            if args.plasmid_output:
-                with open(args.plasmid_output, 'w') as f:
-                    plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
-                    if not args.noheader:
-                        plasmid_output_writer.writeheader()
-                    for o in plasmid_output:
-                        library_id_resistance_gene_assembly_mode_trio = o['library_id'] + '-' + o['resistance_gene_id'] + o['assembly_mode']
-                        if library_id_resistance_gene_assembly_mode_trio not in written_plasmid_rows:
-                            plasmid_output_writer.writerow(o)
-                            written_plasmid_rows.add(library_id_resistance_gene_assembly_mode_trio)
-                        else:
-                            print("duplicate plasmid output: " + library_id_resistance_gene_assembly_mode_trio, file=sys.stderr)
+    written_plasmid_rows = set()
+    if args.plasmid_output:
+        with open(args.plasmid_output, 'w') as f:
+            plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+            if not args.noheader:
+                plasmid_output_writer.writeheader()
+            for o in plasmid_output:
+                if o['overall_pass_fail'] != 'FAIL' and 'library_id' in o and 'resistance_gene_id' in o and 'assembly_mode' in o:
+                    library_id_resistance_gene_assembly_mode_trio = o['library_id'] + '-' + o['resistance_gene_id'] + '-' + o['assembly_mode']
+                else:
+                    library_id_resistance_gene_assembly_mode_trio = None
+                if library_id_resistance_gene_assembly_mode_trio not in written_plasmid_rows:
+                    plasmid_output_writer.writerow(o)
+                    written_plasmid_rows.add(library_id_resistance_gene_assembly_mode_trio)
+                else:
+                    if library_id_resistance_gene_assembly_mode_trio is not None:
+                        print("duplicate plasmid output: " + library_id_resistance_gene_assembly_mode_trio, file=sys.stderr)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
