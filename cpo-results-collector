@@ -11,6 +11,15 @@ import yaml
 
 
 def jdump(x):
+    """
+    Just a convenience function to print JSON with indentation
+    for debugging purposes.
+
+    :param x: object to print as JSON
+    :type x: any
+    :return: None
+    :rtype: None
+    """
     print(json.dumps(x, indent=2))
 
 
@@ -21,9 +30,11 @@ def join_indexed_dicts(dict_1, dict_2):
     Returns a dict of dicts, where the keys of the outer dict are the index, and the values are the union of the inner dicts
 
     :param dict_1: dict of dicts
+    :type dict_1: dict[str, dict]
     :param dict_2: dict of dicts
+    :type dict_2: dict[str, dict]
     :return: dict of dicts
-    :rtype: dict
+    :rtype: dict[str, dict]
     """
     joined_dict = {}
     if not dict_1:
@@ -32,7 +43,7 @@ def join_indexed_dicts(dict_1, dict_2):
         return dict_1
     dict_1_index = set(dict_1.keys())
     dict_2_keys = list(dict_2.values())[0].keys()
-    
+
     for k in dict_1_index:
         joined_dict[k] = dict_1[k]
     for k in dict_1_index:
@@ -42,11 +53,19 @@ def join_indexed_dicts(dict_1, dict_2):
         else:
             for k2 in dict_2_keys:
                 joined_dict[k][k2] = None
-            
+
     return joined_dict
 
 
 def parse_provenance(provenance_path):
+    """
+    Parse a provenance file and return a dictionary.
+
+    :param provenance_path: path to the provenance file
+    :type provenance_path: str
+    :return: dictionary of provenance items
+    :rtype: dict
+    """
     with open(provenance_path, 'r') as f:
         try:
             parsed_provenance = yaml.safe_load(f)
@@ -61,6 +80,14 @@ def parse_provenance(provenance_path):
 
 
 def parse_assembly_provenance(provenance_path):
+    """
+    Parse an assembly provenance file and return a dictionary of assembly provenance items
+
+    :param provenance_path: path to the assembly provenance file
+    :type provenance_path: str
+    :return: dictionary of assembly provenance items
+    :rtype: dict
+    """
     parsed_provenance = parse_provenance(provenance_path)
     assembly_provenance = {}
     for provenance_item in parsed_provenance:
@@ -73,6 +100,14 @@ def parse_assembly_provenance(provenance_path):
 
 
 def parse_mlst_provenance(provenance_path):
+    """
+    Parse an MLST provenance file and return a dictionary of MLST provenance items
+
+    :param provenance_path: path to the MLST provenance file
+    :type provenance_path: str
+    :return: dictionary of MLST provenance items
+    :rtype: dict
+    """
     parsed_provenance = parse_provenance(provenance_path)
     mlst_provenance = {}
     for provenance_item in parsed_provenance:
@@ -85,6 +120,14 @@ def parse_mlst_provenance(provenance_path):
 
 
 def parse_taxon_abundance_provenance(provenance_path):
+    """
+    Parse a taxon abundance provenance file and return a dictionary of taxon abundance provenance items
+
+    :param provenance_path: path to the taxon abundance provenance file
+    :type provenance_path: str
+    :return: dictionary of taxon abundance provenance items
+    :rtype: dict
+    """
     parsed_provenance = parse_provenance(provenance_path)
     taxon_abundance_provenance = {}
     for provenance_item in parsed_provenance:
@@ -97,6 +140,14 @@ def parse_taxon_abundance_provenance(provenance_path):
 
 
 def parse_qc_summary(qc_summary_path):
+    """
+    Parse a QC summary file and return a dictionary of QC items
+
+    :param qc_summary_path: path to the QC summary file
+    :type qc_summary_path: str
+    :return: dictionary of QC items
+    :rtype: dict
+    """
     qc_summary = {}
     with open(qc_summary_path, 'r') as f:
         reader = csv.DictReader(f, dialect='unix')
@@ -137,6 +188,14 @@ def parse_qc_summary(qc_summary_path):
 
 
 def parse_mlst_sequence_type(mlst_sequence_type_csv_path):
+    """
+    Parse an MLST sequence type csv file and return a dictionary of MLST sequence type items
+
+    :param mlst_sequence_type_csv_path: path to the MLST sequence type csv file
+    :type mlst_sequence_type_csv_path: str
+    :return: dictionary of MLST sequence type items
+    :rtype: dict
+    """
     sequence_type = {}
     fields_to_collect = {
         'scheme':        'mlst_scheme',
@@ -153,6 +212,14 @@ def parse_mlst_sequence_type(mlst_sequence_type_csv_path):
 
 
 def parse_mlst_alleles(mlst_json_path):
+    """
+    Parse an MLST alleles json file and return a dictionary of MLST alleles
+
+    :param mlst_json_path: path to the MLST alleles json file
+    :type mlst_json_path: str
+    :return: dictionary of MLST alleles
+    :rtype: dict
+    """
     mlst_json = {}
     with open(mlst_json_path, 'r') as f:
         mlst_json = json.load(f)
@@ -170,6 +237,14 @@ def parse_mlst_alleles(mlst_json_path):
 
 
 def collect_mlst_results(mlst_output_dir):
+    """
+    Collect MLST results from an MLST output directory and return a dictionary of MLST results
+
+    :param mlst_output_dir: path to the MLST output directory
+    :type mlst_output_dir: str
+    :return: dictionary of MLST results
+    :rtype: dict
+    """
     mlst_results_by_sample_id = {}
 
     sequence_type_by_sample_id = {}
@@ -205,6 +280,14 @@ def collect_mlst_results(mlst_output_dir):
 
 
 def parse_top_species(top_species_csv_path):
+    """
+    Parse a top species csv file and return a dictionary of top species
+
+    :param top_species_csv_path: path to the top species csv file
+    :type top_species_csv_path: str
+    :return: dictionary of top species
+    :rtype: dict
+    """
     top_species = {}
     fields_to_collect = {
         'abundance_1_name':                  'species_1_name',
@@ -231,6 +314,14 @@ def parse_top_species(top_species_csv_path):
 
 
 def collect_taxon_abundance_results(taxon_abundance_output_dir):
+    """
+    Collect taxon abundance results from a taxon abundance output directory and return a dictionary of taxon abundance results
+
+    :param taxon_abundance_output_dir: path to the taxon abundance output directory
+    :type taxon_abundance_output_dir: str
+    :return: dictionary of taxon abundance results
+    :rtype: dict
+    """
     taxon_abundance_results_by_sample_id = {}
     top_species_files = glob.glob(os.path.join(taxon_abundance_output_dir, '*', '*_S_top_5.csv'))
     top_species_by_sample_id = {}
@@ -255,6 +346,14 @@ def collect_taxon_abundance_results(taxon_abundance_output_dir):
 
 
 def parse_resistance_gene_report(resistance_gene_report_tsv_path):
+    """
+    Parse a resistance gene report tsv file and return a list of resistance genes
+
+    :param resistance_gene_report_tsv_path: path to the resistance gene report tsv file
+    :type resistance_gene_report_tsv_path: str
+    :return: list of resistance genes
+    :rtype: list[dict]
+    """
     resistance_genes = []
     fields_to_collect = {
         'resistance_gene_id':                    'resistance_gene_id',
@@ -290,6 +389,14 @@ def parse_resistance_gene_report(resistance_gene_report_tsv_path):
 
 
 def collect_plasmid_results(plasmid_screen_output_dir):
+    """
+    Collect plasmid results from a plasmid screen output directory and return a dictionary of plasmid results
+
+    :param plasmid_screen_output_dir: path to the plasmid screen output directory
+    :type plasmid_screen_output_dir: str
+    :return: dictionary of plasmid results
+    :rtype: dict
+    """
     plasmid_results_by_sample_id = {}
     resistance_gene_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_resistance_gene_report.tsv'))
     for resistance_gene_report_file in resistance_gene_report_files:
@@ -301,6 +408,13 @@ def collect_plasmid_results(plasmid_screen_output_dir):
 
 
 def parse_fastp_csv(fastp_csv_path):
+    """
+    Parse a fastp csv file and return a dict of stats
+
+    :param fastp_csv_path: path to fastp csv file
+    :return: dict of stats. Keys are: ['read1_mean_length', 'read2_mean_length', 'q30_rate_short']
+    :rtype: dict
+    """
     fastp_stats = {}
     fields_to_collect = {
         'read1_mean_length_before_filtering': 'read1_mean_length',
@@ -360,6 +474,16 @@ def parse_quast_csv(quast_csv_path):
 
 
 def collect_assembly_results(assembly_output_dir, assembler):
+    """
+    Collect assembly results from an assembly output directory and return a dictionary of assembly results
+
+    :param assembly_output_dir: path to the assembly output directory
+    :type assembly_output_dir: str
+    :param assembler: name of the assembler (e.g. 'unicycler', 'dragonflye')
+    :type assembler: str
+    :return: dictionary of assembly results
+    :rtype: dict
+    """
     assembly_results_by_sample_id = {}
 
     fastp_stats_files = glob.glob(os.path.join(assembly_output_dir, '*', '*_fastp.csv'))
@@ -368,7 +492,7 @@ def collect_assembly_results(assembly_output_dir, assembler):
     for fastp_stats_file in fastp_stats_files:
         sample_id = os.path.basename(fastp_stats_file).split('_')[0]
         fastp_stats_by_sample_id[sample_id] = parse_fastp_csv(fastp_stats_file)
-    
+
     assembly_results_by_sample_id = fastp_stats_by_sample_id.copy()
 
     quast_stats_by_sample_id = {}
@@ -576,16 +700,16 @@ def main(args):
             line['total_bases_input_long_pass_fail'] = total_bases_input_long_pass_fail
             line['overall_pass_fail'] = overall_pass_fail
             core_output[idx] = line
-            
+
     if not args.output:
-        output_writer = csv.DictWriter(sys.stdout, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+        output_writer = csv.DictWriter(sys.stdout, fieldnames=output_fieldnames, dialect='unix', quoting=csv.QUOTE_MINIMAL, extrasaction='ignore')
         if not args.noheader:
             output_writer.writeheader()
         for o in core_output:
             output_writer.writerow(o)
     else:
         with open(args.output, 'w') as f:
-            output_writer = csv.DictWriter(f, fieldnames=output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+            output_writer = csv.DictWriter(f, fieldnames=output_fieldnames, dialect='unix', quoting=csv.QUOTE_MINIMAL, extrasaction='ignore')
             if not args.noheader:
                 output_writer.writeheader()
             for o in core_output:
@@ -668,7 +792,7 @@ def main(args):
     written_plasmid_rows = set()
     if args.plasmid_output:
         with open(args.plasmid_output, 'w') as f:
-            plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+            plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='unix', quoting=csv.QUOTE_MINIMAL, extrasaction='ignore')
             if not args.noheader:
                 plasmid_output_writer.writeheader()
             for o in plasmid_output:
