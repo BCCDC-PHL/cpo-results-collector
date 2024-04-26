@@ -380,7 +380,14 @@ def parse_resistance_gene_report(resistance_gene_report_tsv_path):
             for row in reader:
                 gene = {}
                 for original_field, output_field in fields_to_collect.items():
-                    gene[output_field] = row[original_field]
+                    if original_field == 'resistance_gene_contig_id':
+                        if '=' in row[original_field]:
+                            contig_id_split = row[original_field].split('=')
+                            gene[output_field] = '_'.join(contig_id_split[0].split('_')[:-1])
+                        else:
+                            gene[output_field] = row[original_field]
+                    else:
+                        gene[output_field] = row[original_field]
                 resistance_genes.append(gene)
     except FileNotFoundError as e:
         resistance_genes = [null_output]
@@ -388,7 +395,63 @@ def parse_resistance_gene_report(resistance_gene_report_tsv_path):
     return resistance_genes
 
 
-def collect_plasmid_results(plasmid_screen_output_dir):
+def parse_abricate_report(abricate_report_tsv_path):
+    """
+    Parse an abricate report tsv file and return a list of resistance genes
+
+    :param abricate_report_tsv_path: path to the abricate report tsv file
+    :type abricate_report_tsv_path: str
+    :return: list of resistance genes
+    :rtype: list[dict]
+    """
+    abricate_report = []
+    fieldname_translation = {
+        "#FILE": "file",
+        "SEQUENCE": "resistance_gene_contig_id",
+        "START": "resistance_gene_start",
+        "END": "resistance_gene_end",
+        "STRAND": "resistance_gene_strand",
+        "GENE": "resistance_gene_id",
+        "%COVERAGE": "resistance_gene_percent_coverage",
+        "%IDENTITY": "resistance_gene_percent_identity",
+        "DATABASE": "resistance_gene_database",
+        "ACCESSION": "database_accession",
+        "PRODUCT": "resistance_gene_product",
+        "RESISTANCE": "resistance_class",
+    }
+    int_fields = ['resistance_gene_start', 'resistance_gene_end']
+    float_fields = ['resistance_gene_percent_coverage', 'resistance_gene_percent_identity']
+
+    with open(abricate_report_tsv_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='excel-tab')
+        for row in reader:
+            parsed_row = {}
+            for original_field, output_field in fieldname_translation.items():
+                if output_field == 'resistance_gene_contig_id':
+                    if '=' in row[original_field]:
+                        contig_id_split = row[original_field].split('=')
+                        parsed_row[output_field] = '_'.join(contig_id_split[0].split('_')[:-1])
+                    else:
+                        parsed_row[output_field] = row[original_field]
+                else:
+                    parsed_row[output_field] = row[original_field]
+            for field in int_fields:
+                try:
+                    parsed_row[field] = int(parsed_row[field])
+                except ValueError as e:
+                    parsed_row[field] = None
+            for field in float_fields:
+                try:
+                    parsed_row[field] = float(parsed_row[field])
+                except ValueError as e:
+                    parsed_row[field] = None
+            
+            abricate_report.append(parsed_row)
+
+    return abricate_report
+
+
+def collect_plasmid_screen_results(plasmid_screen_output_dir):
     """
     Collect plasmid results from a plasmid screen output directory and return a dictionary of plasmid results
 
@@ -399,10 +462,19 @@ def collect_plasmid_results(plasmid_screen_output_dir):
     """
     plasmid_results_by_sample_id = {}
     resistance_gene_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_resistance_gene_report.tsv'))
+    abricate_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_abricate.tsv'))
+    
     for resistance_gene_report_file in resistance_gene_report_files:
         sample_id = os.path.basename(resistance_gene_report_file).split('_')[0]
         resistance_genes = parse_resistance_gene_report(resistance_gene_report_file)
         plasmid_results_by_sample_id[sample_id] = resistance_genes
+
+    for abricate_report_file in abricate_report_files:
+        sample_id = os.path.basename(abricate_report_file).split('_')[0]
+        abricate_report = parse_abricate_report(abricate_report_file)
+        abricate_carbapenemases = [x for x in abricate_report if x['resistance_class'] == 'CARBAPENEM']
+        chromosome_carbapenemases = [x for x in abricate_carbapenemases if 'chromosome' in x['file']]
+        
 
     return plasmid_results_by_sample_id
 
@@ -514,8 +586,6 @@ def collect_assembly_results(assembly_output_dir, assembler):
 
     assembly_provenance_files = glob.glob(os.path.join(assembly_output_dir, '*', '*_provenance.yml'))
     
-    # latest_assembly_provenance_file = assembly_provenance_files[-1]
-    
     assembly_provenance_by_sample_id = {}
     for assembly_provenance_file in assembly_provenance_files:
         sample_id = os.path.basename(assembly_provenance_file).split('_')[0]
@@ -532,52 +602,51 @@ def collect_assembly_results(assembly_output_dir, assembler):
             })
     
     return assembly_results_by_sample_id
-    
 
-def main(args):
-    core_output = []
-    plasmid_output = []
 
-    miseq_run_id_regex = r'^[0-9]{6}_M[0-9]{5}_[0-9]{4}_[02]{9}-[A-Z0-9]{5}$'
-    nextseq_run_id_regex = r'^[0-9]{6}_VH[0-9]{5}_[0-9]+_[A-Z0-9]{9}$'
+def collect_core_results(analysis_dir, assembly_mode):
+    """
+    Collect core results from an analysis directory and return a dictionary of core results
 
-    gridion_run_id_regex = r'^[0-9]{8}_[0-9]{4}_X[0-9]_[A-Z0-9]{8}_[a-z0-9]{8}$'
-    promethion_run_id_regex = r'^[0-9]{8}_[0-9]{4}_P2S_[0-9]{5}-[0-9]_[A-Z0-9]{8}_[a-z0-9]{8}$'
+    :param analysis_dir: path to the analysis directory
+    :type analysis_dir: str
+    :param assembly_mode: assembly mode ('short', 'long', 'hybrid')
+    :type assembly_mode: str
+    :return: dictionary of core results
+    :rtype: dict
+    """
+    core_results = []
+    core_results_by_sample_id = {}
 
-    sequencing_run_id = os.path.basename(args.analysis_dir.rstrip('/'))
+    sequencing_run_id = os.path.basename(analysis_dir)
+    assembly_mode_output_dir = os.path.join(analysis_dir, assembly_mode)
 
-    instrument_type = None
-    if re.match(miseq_run_id_regex, sequencing_run_id) or re.match(nextseq_run_id_regex, sequencing_run_id):
-        instrument_type = 'illumina'
-    elif re.match(gridion_run_id_regex, sequencing_run_id) or re.match(promethion_run_id_regex, sequencing_run_id):
-        instrument_type = 'nanopore'
-
-    assembly_output_dirname = None
-    assembly_tool_name = None
-    assembly_mode = None
-    if instrument_type == 'illumina':
+    if assembly_mode == 'short':
         assembly_output_dirname = 'routine-assembly-v0.4-output'
         assembly_tool_name = 'unicycler'
-        assembly_mode = 'short'
-    elif instrument_type == 'nanopore':
+
+    elif assembly_mode == 'hybrid':
         assembly_output_dirname = 'dragonflye-nf-v0.1-output'
         assembly_tool_name = 'dragonflye'
-        assembly_mode = 'hybrid'
 
-    assembly_mode_output_dir = os.path.join(args.analysis_dir, assembly_mode)
+    # Haven't implemented long-read-only assembly yet
+    else:
+        return core_results
 
+    #
+    # Collect QC Summary
+    #
     qc_summary = {}
     if os.path.exists(assembly_mode_output_dir):
-
         qc_summary_path = os.path.join(assembly_mode_output_dir, sequencing_run_id + '_auto-cpo_qc_summary.csv')
-        
-        qc_summary_path = os.path.join(assembly_mode_output_dir, sequencing_run_id + '_auto-cpo_qc_summary.csv')
-
         if os.path.exists(qc_summary_path):
             qc_summary = parse_qc_summary(qc_summary_path)
 
     core_results_by_sample_id = qc_summary.copy()
 
+    #
+    # Collect Assembly Results
+    #
     assembly_output_subdir = os.path.join(assembly_mode_output_dir, assembly_output_dirname)
     assembly_results_by_sample_id = collect_assembly_results(assembly_output_subdir, assembly_tool_name)
     for sample_id in assembly_results_by_sample_id.keys():
@@ -585,6 +654,9 @@ def main(args):
 
     core_results_by_sample_id = join_indexed_dicts(core_results_by_sample_id, assembly_results_by_sample_id)
 
+    #
+    # Collect MLST Results
+    #
     mlst_output_dirname = 'mlst-nf-v0.1-output'
     mlst_output_subdir = os.path.join(assembly_mode_output_dir, mlst_output_dirname)
     mlst_results_by_sample_id = {}
@@ -626,21 +698,158 @@ def main(args):
 
     core_results_by_sample_id = join_indexed_dicts(core_results_by_sample_id, taxon_abundance_results_by_sample_id)
 
-    plasmid_results_by_sample_id = {}
-    plasmid_screen_output_dirname = 'plasmid-screen-v0.2-output'
-    plasmid_screen_output_subdir = os.path.join(assembly_mode_output_dir, plasmid_screen_output_dirname)
-    plasmid_screen_results_by_sample_id = collect_plasmid_results(plasmid_screen_output_subdir)
-
-    plasmid_results_by_sample_id = plasmid_screen_results_by_sample_id.copy()
-
     for k, v in core_results_by_sample_id.items():
         v['sequencing_run_id'] = sequencing_run_id
         v['library_id'] = k
-        v['assembly_tool_name'] = args.assembler
+        v['assembly_tool_name'] = assembly_tool_name
         v['assembly_mode'] = assembly_mode
-        core_output.append(v)
+        core_results.append(v)
 
-    output_fieldnames = [
+    # Make sure that if the overall QC check fails, other outputs are set to None
+    for idx, line in enumerate(core_results):
+        sequencing_run_id = line['sequencing_run_id']
+        library_id = line['library_id']
+        total_bases_input_short = line.get('total_bases_input_short', None)
+        total_bases_input_short_pass_fail = line.get('total_bases_input_short_pass_fail', None)
+        total_bases_input_long = line.get('total_bases_input_long', None)
+        total_bases_input_long_pass_fail = line.get('total_bases_input_long_pass_fail', None)
+        overall_pass_fail = line.get('overall_pass_fail', None)
+        if overall_pass_fail == 'FAIL':
+            line = {k: None for k in line.keys()}
+            line['sequencing_run_id'] = sequencing_run_id
+            line['library_id'] = library_id
+            line['total_bases_input_short'] = total_bases_input_short
+            line['total_bases_input_short_pass_fail'] = total_bases_input_short_pass_fail
+            line['total_bases_input_long'] = total_bases_input_long
+            line['total_bases_input_long_pass_fail'] = total_bases_input_long_pass_fail
+            line['overall_pass_fail'] = overall_pass_fail
+            core_results[idx] = line
+
+    return core_results
+    
+
+def collect_plasmid_results(analysis_dir, assembly_mode):
+    """
+    Collect plasmid results from an analysis directory and a list of plasmid results
+
+    :param analysis_dir: path to the analysis directory
+    :type analysis_dir: str
+    :param assembly_mode: assembly mode ('short', 'long', 'hybrid')
+    :type assembly_mode: str
+    :return: list of plasmid results
+    :rtype: list[dict]
+    """
+    plasmid_results = []
+    plasmid_results_by_sample_id = {}
+
+    sequencing_run_id = os.path.basename(analysis_dir)
+    if assembly_mode == 'short':
+        assembly_tool_name = 'unicycler'
+    elif assembly_mode == 'hybrid':
+        assembly_tool_name = 'dragonflye'
+    assembly_mode_output_dir = os.path.join(analysis_dir, assembly_mode)
+    plasmid_screen_output_dirname = 'plasmid-screen-v0.2-output'
+    plasmid_screen_output_subdir = os.path.join(assembly_mode_output_dir, plasmid_screen_output_dirname)
+    plasmid_screen_results_by_sample_id = collect_plasmid_screen_results(plasmid_screen_output_subdir)
+
+    plasmid_results_by_sample_id = plasmid_screen_results_by_sample_id.copy()
+
+    for k, vs in plasmid_results_by_sample_id.items():
+        for v in vs:
+            v['sequencing_run_id'] = sequencing_run_id
+            v['library_id'] = k
+            v['assembly_tool_name'] = assembly_tool_name
+            v['assembly_mode'] = assembly_mode
+            plasmid_results.append(v)
+
+    return plasmid_results
+
+
+def add_qc_summary_to_plasmid_results(core_results, plasmid_results):
+    """
+    Add QC summary fields to plasmid results
+
+    :param core_results: core results
+    :type core_results: list[dict]
+    :param plasmid_results: plasmid results
+    :type plasmid_results: list[dict]
+    :return: list of plasmid results with QC summary fields added
+    :rtype: list[dict]
+    """
+
+    plasmid_output = []
+    core_results_by_sample_id = {x['library_id']: x for x in core_results}
+    plasmid_results_by_sample_id = {}
+    for plasmid_result in plasmid_results:
+        library_id = plasmid_result['library_id']
+        if library_id in plasmid_results_by_sample_id.keys():
+            plasmid_results_by_sample_id[library_id].append(plasmid_result)
+        else:
+            plasmid_results_by_sample_id[library_id] = [plasmid_result]
+
+    for k, v in core_results_by_sample_id.items():
+        if k in plasmid_results_by_sample_id.keys():
+            for plasmid_result in plasmid_results_by_sample_id[k]:
+                plasmid_result['total_bases_input_short'] = v.get('total_bases_input_short', None)
+                plasmid_result['total_bases_input_short_pass_fail'] = v.get('total_bases_input_short_pass_fail', None)
+                plasmid_result['total_bases_input_long'] = v.get('total_bases_input_long', None)
+                plasmid_result['total_bases_input_long_pass_fail'] = v.get('total_bases_input_long_pass_fail', None)
+                plasmid_result['overall_pass_fail'] = v.get('overall_pass_fail', None)
+        else:
+            plasmid_results_by_sample_id[k] = [
+                {
+                    'total_bases_input_short': v.get('total_bases_input_short', None),
+                    'total_bases_input_short_pass_fail': v.get('total_bases_input_short_pass_fail', None),
+                    'total_bases_input_long': v.get('total_bases_input_long', None),
+                    'total_bases_input_long_pass_fail': v.get('total_bases_input_long_pass_fail', None),
+                    'overall_pass_fail': v.get('overall_pass_fail', None),
+                }
+            ]
+
+    for sample_id, plasmid_results in plasmid_results_by_sample_id.items():
+        for plasmid_result in plasmid_results:
+            plasmid_output.append(plasmid_result)
+
+    return plasmid_output
+
+
+def main(args):
+    if not os.path.exists(args.analysis_dir):
+        print(f"Analysis directory not found: {args.analysis_dir}")
+        exit(-1)
+
+    core_output = []
+    plasmid_output = []
+
+    miseq_run_id_regex = r'^[0-9]{6}_M[0-9]{5}_[0-9]{4}_[02]{9}-[A-Z0-9]{5}$'
+    nextseq_run_id_regex = r'^[0-9]{6}_VH[0-9]{5}_[0-9]+_[A-Z0-9]{9}$'
+
+    gridion_run_id_regex = r'^[0-9]{8}_[0-9]{4}_X[0-9]_[A-Z0-9]{8}_[a-z0-9]{8}$'
+    promethion_run_id_regex = r'^[0-9]{8}_[0-9]{4}_P2S_[0-9]{5}-[0-9]_[A-Z0-9]{8}_[a-z0-9]{8}$'
+
+    sequencing_run_id = os.path.basename(args.analysis_dir.rstrip('/'))
+
+    instrument_type = None
+    if re.match(miseq_run_id_regex, sequencing_run_id) or re.match(nextseq_run_id_regex, sequencing_run_id):
+        instrument_type = 'illumina'
+    elif re.match(gridion_run_id_regex, sequencing_run_id) or re.match(promethion_run_id_regex, sequencing_run_id):
+        instrument_type = 'nanopore'
+    else:
+        print(f"Could not determine instrument type for sequencing run {sequencing_run_id}")
+        exit(-1)
+
+    valid_assembly_modes = ['short', 'long', 'hybrid']
+    assembly_modes = []
+    analysis_dir_subdirs = os.listdir(args.analysis_dir)
+    for subdir in analysis_dir_subdirs:
+        if subdir in valid_assembly_modes:
+            assembly_modes.append(subdir)
+
+    for assembly_mode in assembly_modes:
+        core_output += collect_core_results(args.analysis_dir, assembly_mode)
+        plasmid_output += collect_plasmid_results(args.analysis_dir, assembly_mode)
+
+    core_output_fieldnames = [
         'sequencing_run_id',
         'library_id',
         'total_bases_input_short',
@@ -681,67 +890,21 @@ def main(args):
         'species_pipeline_version',
     ]
 
-    # Make sure that if the overall QC check fails, other outputs are set to None
-    for idx, line in enumerate(core_output):
-        sequencing_run_id = line['sequencing_run_id']
-        library_id = line['library_id']
-        total_bases_input_short = line['total_bases_input_short']
-        total_bases_input_short_pass_fail = line['total_bases_input_short_pass_fail']
-        total_bases_input_long = line['total_bases_input_long']
-        total_bases_input_long_pass_fail = line['total_bases_input_long_pass_fail']
-        overall_pass_fail = line['overall_pass_fail']
-        if overall_pass_fail == 'FAIL':
-            line = {k: None for k in line.keys()}
-            line['sequencing_run_id'] = sequencing_run_id
-            line['library_id'] = library_id
-            line['total_bases_input_short'] = total_bases_input_short
-            line['total_bases_input_short_pass_fail'] = total_bases_input_short_pass_fail
-            line['total_bases_input_long'] = total_bases_input_long
-            line['total_bases_input_long_pass_fail'] = total_bases_input_long_pass_fail
-            line['overall_pass_fail'] = overall_pass_fail
-            core_output[idx] = line
-
     if not args.output:
-        output_writer = csv.DictWriter(sys.stdout, fieldnames=output_fieldnames, dialect='unix', quoting=csv.QUOTE_MINIMAL, extrasaction='ignore')
+        output_writer = csv.DictWriter(sys.stdout, fieldnames=core_output_fieldnames, dialect='unix', quoting=csv.QUOTE_MINIMAL, extrasaction='ignore')
         if not args.noheader:
             output_writer.writeheader()
         for o in core_output:
             output_writer.writerow(o)
     else:
         with open(args.output, 'w') as f:
-            output_writer = csv.DictWriter(f, fieldnames=output_fieldnames, dialect='unix', quoting=csv.QUOTE_MINIMAL, extrasaction='ignore')
+            output_writer = csv.DictWriter(f, fieldnames=core_output_fieldnames, dialect='unix', quoting=csv.QUOTE_MINIMAL, extrasaction='ignore')
             if not args.noheader:
                 output_writer.writeheader()
             for o in core_output:
                 output_writer.writerow(o)
 
-
-    for k, v in core_results_by_sample_id.items():
-        if k in plasmid_results_by_sample_id.keys():
-            for plasmid_result in plasmid_results_by_sample_id[k]:
-                plasmid_result['total_bases_input_short'] = v['total_bases_input_short']
-                plasmid_result['total_bases_input_short_pass_fail'] = v['total_bases_input_short_pass_fail']
-                plasmid_result['total_bases_input_long'] = v['total_bases_input_long']
-                plasmid_result['total_bases_input_long_pass_fail'] = v['total_bases_input_long_pass_fail']
-                plasmid_result['overall_pass_fail'] = v['overall_pass_fail']
-        else:
-            plasmid_results_by_sample_id[k] = [
-                {
-                    'total_bases_input_short': v['total_bases_input_short'],
-                    'total_bases_input_short_pass_fail': v['total_bases_input_short_pass_fail'],
-                    'total_bases_input_long': v['total_bases_input_long'],
-                    'total_bases_input_long_pass_fail': v['total_bases_input_long_pass_fail'],
-                    'overall_pass_fail': v['overall_pass_fail'],
-                }
-            ]
-            
-    for k, vs in plasmid_results_by_sample_id.items():
-        for v in vs:
-            v['sequencing_run_id'] = sequencing_run_id
-            v['library_id'] = k
-            v['assembly_tool_name'] = args.assembler
-            v['assembly_mode'] = assembly_mode
-            plasmid_output.append(v)
+    plasmid_output = add_qc_summary_to_plasmid_results(core_output, plasmid_output)
 
     plasmid_output_fieldnames = [
         'sequencing_run_id',
@@ -773,11 +936,11 @@ def main(args):
     for idx, line in enumerate(plasmid_output):
         sequencing_run_id = line['sequencing_run_id']
         library_id = line['library_id']
-        total_bases_input_short = line['total_bases_input_short']
-        total_bases_input_short_pass_fail = line['total_bases_input_short_pass_fail']
-        total_bases_input_long = line['total_bases_input_long']
-        total_bases_input_long_pass_fail = line['total_bases_input_long_pass_fail']
-        overall_pass_fail = line['overall_pass_fail']
+        total_bases_input_short = line.get('total_bases_input_short', None)
+        total_bases_input_short_pass_fail = line.get('total_bases_input_short_pass_fail', None)
+        total_bases_input_long = line.get('total_bases_input_long', None)
+        total_bases_input_long_pass_fail = line.get('total_bases_input_long_pass_fail', None)
+        overall_pass_fail = line.get('overall_pass_fail', None)
         if overall_pass_fail == 'FAIL':
             line = {k: None for k in line.keys()}
             line['sequencing_run_id'] = sequencing_run_id
@@ -806,6 +969,7 @@ def main(args):
                 else:
                     if library_id_resistance_gene_assembly_mode_trio is not None:
                         print("duplicate plasmid output: " + library_id_resistance_gene_assembly_mode_trio, file=sys.stderr)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
