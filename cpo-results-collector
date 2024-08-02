@@ -468,6 +468,71 @@ def parse_quast_csv(quast_csv_path: Path) -> dict:
     return quast_stats
 
 
+def parse_abricate_report(abricate_report_tsv_path: Path) -> list[dict]:
+    """
+    Parse the Abricate report TSV file and return a list of dictionaries.
+
+    :param abricate_report_tsv_path: Path to the Abricate report TSV file.
+    :type abricate_report_tsv_path: Path
+    :return: List of dictionaries containing the parsed Abricate report.
+    :rtype: list[dict]
+    """
+    parsed_abricate_report = []
+    fieldname_translations = {
+        'sequence': 'contig_id',
+    }
+    int_fields = [
+        'start',
+        'end',
+    ]
+    float_fields = [
+        'percent_coverage',
+        'percent_identity',
+    ]
+    with open(abricate_report_tsv_path, 'r') as f:
+        reader = csv.DictReader(f, delimiter='\t')
+        for row in reader:
+            abricate_report_record = {}
+            original_keys = list(row.keys())
+            cleaned_keys = [key.strip().lstrip('#').lower().replace('%', 'percent_') for key in row.keys()]
+
+            for idx, cleaned_key in enumerate(cleaned_keys):
+                if cleaned_key in fieldname_translations:
+                    key = fieldname_translations[cleaned_key]
+                else:
+                    key = cleaned_key
+
+                original_key = original_keys[idx]
+
+                if key in int_fields:
+                    try:
+                        abricate_report_record[key] = int(row[original_key])
+                    except ValueError:
+                        abricate_report_record[key] = None
+                elif key in float_fields:
+                    try:
+                        abricate_report_record[key] = float(row[original_key])
+                    except ValueError:
+                        abricate_report_record[key] = None
+                else:
+                    abricate_report_record[key] = row[original_key]
+
+            parsed_abricate_report.append(abricate_report_record)
+
+    for record in parsed_abricate_report:
+        filename = record['file']
+        if 'chromosome' in filename:
+            contig_localization = 'chromosome'
+        elif 'plasmid' in filename:
+            contig_localization = 'plasmid'
+        else:
+            contig_localization = None
+
+        record['contig_localization'] = contig_localization
+
+    return parsed_abricate_report
+    
+
 def collect_assembly_results(assembly_output_dir, assembler):
     """
     Collect assembly results from a directory of assembly output files
