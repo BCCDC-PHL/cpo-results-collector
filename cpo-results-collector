@@ -9,6 +9,7 @@ import re
 import sys
 import yaml
 
+from pathlib import Path
 
 def jdump(x):
     print(json.dumps(x, indent=2))
@@ -21,7 +22,9 @@ def join_indexed_dicts(dict_1, dict_2):
     Returns a dict of dicts, where the keys of the outer dict are the index, and the values are the union of the inner dicts
 
     :param dict_1: dict of dicts
+    :type dict_1: dict
     :param dict_2: dict of dicts
+    :type dict_2: dict
     :return: dict of dicts
     :rtype: dict
     """
@@ -46,7 +49,15 @@ def join_indexed_dicts(dict_1, dict_2):
     return joined_dict
 
 
-def parse_provenance(provenance_path):
+def parse_provenance(provenance_path: Path) -> list[dict]:
+    """
+    Parse a provenance file and return a list of dicts
+
+    :param provenance_path: path to provenance file
+    :type provenance_path: Path
+    :return: list of dicts
+    :rtype list[dict]
+    """
     with open(provenance_path, 'r') as f:
         try:
             parsed_provenance = yaml.safe_load(f)
@@ -60,7 +71,15 @@ def parse_provenance(provenance_path):
     return(parsed_provenance)
 
 
-def parse_assembly_provenance(provenance_path):
+def parse_assembly_provenance(provenance_path: Path) -> dict:
+    """
+    Parse an assembly provenance file and return a dict of assembly provenance info
+
+    :param provenance_path: path to assembly provenance file
+    :type provenance_path: Path
+    :return: dict of assembly provenance info
+    :rtype: dict
+    """
     parsed_provenance = parse_provenance(provenance_path)
     assembly_provenance = {}
     for provenance_item in parsed_provenance:
@@ -72,7 +91,15 @@ def parse_assembly_provenance(provenance_path):
     return assembly_provenance
 
 
-def parse_mlst_provenance(provenance_path):
+def parse_mlst_provenance(provenance_path: Path) -> dict:
+    """
+    Parse an mlst provenance file and return a dict of mlst provenance info
+
+    :param provenance_path: path to mlst provenance file
+    :type provenance_path: Path
+    :return: dict of mlst provenance info
+    :rtype: dict
+    """
     parsed_provenance = parse_provenance(provenance_path)
     mlst_provenance = {}
     for provenance_item in parsed_provenance:
@@ -84,7 +111,15 @@ def parse_mlst_provenance(provenance_path):
     return mlst_provenance
 
 
-def parse_taxon_abundance_provenance(provenance_path):
+def parse_taxon_abundance_provenance(provenance_path: Path) -> dict:
+    """
+    Parse a taxon abundance provenance file and return a dict of taxon abundance provenance info
+
+    :param provenance_path: path to taxon abundance provenance file
+    :type provenance_path: Path
+    :return: dict of taxon abundance provenance info
+    :rtype: dict
+    """
     parsed_provenance = parse_provenance(provenance_path)
     taxon_abundance_provenance = {}
     for provenance_item in parsed_provenance:
@@ -96,7 +131,15 @@ def parse_taxon_abundance_provenance(provenance_path):
     return taxon_abundance_provenance
 
 
-def parse_qc_summary(qc_summary_path):
+def parse_qc_summary(qc_summary_path: Path) -> dict:
+    """
+    Parse a qc summary csv file and return a dict of qc summary info
+
+    :param qc_summary_path: path to qc summary csv file
+    :type qc_summary_path: Path
+    :return: dict of qc summary info
+    :rtype: dict
+    """
     qc_summary = {}
     with open(qc_summary_path, 'r') as f:
         reader = csv.DictReader(f, dialect='unix')
@@ -136,7 +179,15 @@ def parse_qc_summary(qc_summary_path):
     return qc_summary
 
 
-def parse_mlst_sequence_type(mlst_sequence_type_csv_path):
+def parse_mlst_sequence_type(mlst_sequence_type_csv_path: Path) -> dict:
+    """
+    Parse a mlst sequence type csv file and return a dict of sequence type info
+
+    :param mlst_sequence_type_csv_path: path to mlst sequence type csv file
+    :type mlst_sequence_type_csv_path: Path
+    :return: dict of sequence type info
+    :rtype: dict
+    """
     sequence_type = {}
     fields_to_collect = {
         'scheme':        'mlst_scheme',
@@ -152,7 +203,15 @@ def parse_mlst_sequence_type(mlst_sequence_type_csv_path):
     return sequence_type
 
 
-def parse_mlst_alleles(mlst_json_path):
+def parse_mlst_alleles(mlst_json_path: Path) -> dict:
+    """
+    Parse a mlst json file and return a dict of mlst alleles
+
+    :param mlst_json_path: path to mlst json file
+    :type mlst_json_path: Path
+    :return: dict of mlst alleles
+    :rtype: dict
+    """
     mlst_json = {}
     with open(mlst_json_path, 'r') as f:
         mlst_json = json.load(f)
@@ -169,7 +228,15 @@ def parse_mlst_alleles(mlst_json_path):
     return alleles
 
 
-def collect_mlst_results(mlst_output_dir):
+def collect_mlst_results(mlst_output_dir: Path) -> dict:
+    """
+    Collect mlst results from a directory of mlst output files
+
+    :param mlst_output_dir: path to directory containing mlst output files
+    :type mlst_output_dir: Path
+    :return: dict of mlst results
+    :rtype: dict
+    """
     mlst_results_by_sample_id = {}
 
     sequence_type_by_sample_id = {}
@@ -204,7 +271,15 @@ def collect_mlst_results(mlst_output_dir):
     return mlst_results_by_sample_id
 
 
-def parse_top_species(top_species_csv_path):
+def parse_top_species(top_species_csv_path: Path) -> dict:
+    """
+    Parse a top species csv file and return a dict of top species info
+
+    :param top_species_csv_path: path to top species csv file
+    :type top_species_csv_path: Path
+    :return: dict of top species info
+    :rtype: dict
+    """
     top_species = {}
     fields_to_collect = {
         'abundance_1_name':                  'species_1_name',
@@ -230,7 +305,15 @@ def parse_top_species(top_species_csv_path):
     return top_species
 
 
-def collect_taxon_abundance_results(taxon_abundance_output_dir):
+def collect_taxon_abundance_results(taxon_abundance_output_dir: Path) -> dict:
+    """
+    Collect taxon abundance results from a directory of taxon abundance output files
+
+    :param taxon_abundance_output_dir: path to directory containing taxon abundance output files
+    :type taxon_abundance_output_dir: Path
+    :return: dict of taxon abundance results
+    :rtype: dict
+    """
     taxon_abundance_results_by_sample_id = {}
     top_species_files = glob.glob(os.path.join(taxon_abundance_output_dir, '*', '*_S_top_5.csv'))
     top_species_by_sample_id = {}
@@ -254,7 +337,15 @@ def collect_taxon_abundance_results(taxon_abundance_output_dir):
     return taxon_abundance_results_by_sample_id
 
 
-def parse_resistance_gene_report(resistance_gene_report_tsv_path):
+def parse_resistance_gene_report(resistance_gene_report_tsv_path: Path) -> list[dict]:
+    """
+    Parse a resistance gene report tsv file and return a list of dicts
+
+    :param resistance_gene_report_tsv_path: path to resistance gene report tsv file
+    :type resistance_gene_report_tsv_path: Path
+    :return: list of dicts
+    :rtype: list[dict]
+    """
     resistance_genes = []
     fields_to_collect = {
         'resistance_gene_id':                    'resistance_gene_id',
@@ -289,7 +380,15 @@ def parse_resistance_gene_report(resistance_gene_report_tsv_path):
     return resistance_genes
 
 
-def collect_plasmid_results(plasmid_screen_output_dir):
+def collect_plasmid_results(plasmid_screen_output_dir: Path) -> dict:
+    """
+    Collect plasmid results from a directory of plasmid screen output files
+
+    :param plasmid_screen_output_dir: path to directory containing plasmid screen output files
+    :type plasmid_screen_output_dir: Path
+    :return: dict of plasmid results
+    :rtype: dict
+    """
     plasmid_results_by_sample_id = {}
     resistance_gene_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_resistance_gene_report.tsv'))
     for resistance_gene_report_file in resistance_gene_report_files:
@@ -300,7 +399,15 @@ def collect_plasmid_results(plasmid_screen_output_dir):
     return plasmid_results_by_sample_id
 
 
-def parse_fastp_csv(fastp_csv_path):
+def parse_fastp_csv(fastp_csv_path: Path) -> dict:
+    """
+    Parse a fastp csv file and return a dict of stats
+
+    :param fastp_csv_path: path to fastp csv file
+    :type fastp_csv_path: Path
+    :return: dict of stats. Keys are: ['read1_mean_length', 'read2_mean_length', 'q30_rate_short']
+    :rtype: dict
+    """
     fastp_stats = {}
     fields_to_collect = {
         'read1_mean_length_before_filtering': 'read1_mean_length',
@@ -316,11 +423,12 @@ def parse_fastp_csv(fastp_csv_path):
     return fastp_stats
 
 
-def parse_nanoq_csv(nanoq_csv_path):
+def parse_nanoq_csv(nanoq_csv_path: Path) -> dict:
     """
     Parse a nanoq csv file and return a dict of stats
 
     :param nanoq_csv_path: path to nanoq csv file
+    :type nanoq_csv_path: Path
     :return: dict of stats.
     :rtype: dict
     """
@@ -336,11 +444,12 @@ def parse_nanoq_csv(nanoq_csv_path):
     return nanoq_stats
 
 
-def parse_quast_csv(quast_csv_path):
+def parse_quast_csv(quast_csv_path: Path) -> dict:
     """
     Parse a quast csv file and return a dict of stats
 
     :param quast_csv_path: path to quast csv file
+    :type quast_csv_path: Path
     :return: dict of stats. Keys are: ['assembly_total_length', 'assembly_num_contigs', 'assembly_N50', 'assembly_N75']
     :rtype: dict
     """
@@ -360,6 +469,14 @@ def parse_quast_csv(quast_csv_path):
 
 
 def collect_assembly_results(assembly_output_dir, assembler):
+    """
+    Collect assembly results from a directory of assembly output files
+
+    :param assembly_output_dir: path to directory containing assembly output files
+    :type assembly_output_dir: Path
+    :return: dict of assembly results
+    :rtype: dict
+    """
     assembly_results_by_sample_id = {}
 
     fastp_stats_files = glob.glob(os.path.join(assembly_output_dir, '*', '*_fastp.csv'))
