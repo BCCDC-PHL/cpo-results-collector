@@ -131,6 +131,51 @@ def parse_taxon_abundance_provenance(provenance_path: Path) -> dict:
     return taxon_abundance_provenance
 
 
+def parse_sample_qc_summary(sample_qc_summary_path: Path) -> dict:
+    """
+    Parse a sample qc summary csv file and return a dict of sample qc summary info
+    
+    Note: the "sample_qc_summary.csv" file was introduced in auto-cpo v0.1.0, and
+    has a different structure from the "qc_summary.csv" file. This function is
+    intended to parse the new "sample_qc_summary.csv" file.
+
+    :param sample_qc_summary_path: path to sample qc summary csv file
+    :type sample_qc_summary_path: Path
+    :return: dict of sample qc summary info
+    """
+    sample_qc_summary = []
+    int_fields = [
+        'total_bases_input',
+        'filtered_bases_input',
+    ]
+    float_fields = [
+        'pre_alignment_estimated_depth_coverage_per_mb',
+        'q30_percent_before_filtering',
+        'q30_percent_after_filtering',
+    ]
+
+    with open(sample_qc_summary_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='unix')
+        for row in reader:
+            sample_qc_summary_record = {}
+            for k, v in row.items():
+                if k in int_fields:
+                    try:
+                        sample_qc_summary_record[k] = int(v)
+                    except ValueError:
+                        sample_qc_summary_record[k] = None
+                elif k in float_fields:
+                    try:
+                        sample_qc_summary_record[k] = float(v)
+                    except ValueError:
+                        sample_qc_summary_record[k] = None
+                else:
+                    sample_qc_summary_record[k] = v
+            sample_qc_summary.append(sample_qc_summary_record)
+
+    return sample_qc_summary
+
+
 def parse_qc_summary(qc_summary_path: Path) -> dict:
     """
     Parse a qc summary csv file and return a dict of qc summary info
@@ -140,41 +185,202 @@ def parse_qc_summary(qc_summary_path: Path) -> dict:
     :return: dict of qc summary info
     :rtype: dict
     """
-    qc_summary = {}
+    qc_summary = []
+    int_fields = [
+        'total_bases_input',
+    ]
     with open(qc_summary_path, 'r') as f:
         reader = csv.DictReader(f, dialect='unix')
         for row in reader:
-            library_id = row['library_id']
-            qc = {'library_id': library_id}
-            try:
-                qc['total_bases_input_short'] = int(row['total_bases_input'])
-            except ValueError as e:
-                row['total_bases_input'] = None
-            if 'total_bases_input_long' in row.keys():
-                try:
-                    qc['total_bases_input_long'] = int(row['total_bases_input_long'])
-                except ValueError as e:
-                    qc['total_bases_input_long'] = None
-            else:
-                qc['total_bases_input_long'] = 0
-            if 'total_bases_input_pass_fail' in row.keys():
-                qc['total_bases_input_short_pass_fail'] = row['total_bases_input_pass_fail']
-            if 'total_bases_input_long_pass_fail' in row.keys():
-                qc['total_bases_input_long_pass_fail'] = row['total_bases_input_long_pass_fail']
-            else:
-                qc['total_bases_input_long_pass_fail'] = None
+            qc_summary_record = {}
+            for k, v in row.items():
+                if k in int_fields:
+                    try:
+                        qc_summary_record[k] = int(v)
+                    except ValueError:
+                        qc_summary_record[k] = None
+                else:
+                    qc_summary_record[k] = v
+            qc_summary.append(qc_summary_record)
 
-            if qc['total_bases_input_long_pass_fail'] == None:
-                qc['overall_pass_fail'] = qc['total_bases_input_short_pass_fail']
-            else:
-                qc['overall_pass_fail'] = 'FAIL'
-                qc_checks = [qc[field] for field in ['total_bases_input_long_pass_fail', 'total_bases_input_short_pass_fail']]
-                if not any([x == 'FAIL' for x in qc_checks]):
-                    qc['overall_pass_fail'] = 'WARN'
-                if all([x == 'PASS' for x in qc_checks]):
-                    qc['overall_pass_fail'] = 'PASS'
-            
-            qc_summary[library_id] = qc
+    return qc_summary
+    
+
+def parse_nanopore_basic_qc_stats(nanopore_basic_qc_stats_path: Path) -> dict:
+    """
+    Parse a nanopore basic qc stats csv file and return a dict of basic qc stats.
+
+    :param nanopore_basic_qc_stats_path: path to nanopore basic qc stats csv file
+    :type nanopore_basic_qc_stats_path: Path
+    :return: dict of basic qc stats
+    :rtype: dict
+    """
+    basic_qc_stats = []
+
+    int_fields = [
+        'reads',
+        'bases',
+        'n50',
+        'mean_length',
+        'median_length',
+    ]
+
+    float_fields = [
+        'mean_quality',
+        'median_quality',
+    ]
+        
+    with open(nanopore_basic_qc_stats_path, 'r') as f:
+        reader = csv.DictReader(f, dialect='unix')
+        for row in reader:
+            basic_qc_stats_record = {}
+            for k, v in row.items():
+                if k in int_fields:
+                    try:
+                        basic_qc_stats_record[k] = int(v)
+                    except ValueError:
+                        basic_qc_stats_record[k] = None
+                elif k in float_fields:
+                    try:
+                        basic_qc_stats_record[k] = float(v)
+                    except ValueError:
+                        basic_qc_stats_record[k] = None
+                else:
+                    basic_qc_stats_record[k] = v
+            basic_qc_stats.append(basic_qc_stats_record)
+
+    return basic_qc_stats
+
+
+def harmonize_input_reads_qc(input_short_reads_qc: list[dict], input_long_reads_qc: list[dict]) -> dict:
+    """
+    Harmonize input reads qc summary info, so that it is in a consistent format
+    with a standard set of keys, regardless of the type of sequencing run, assembly mode or
+    which qc version of qc summary file was generated.
+
+    Take both short and long reads qc summary info, and return a dict of harmonized input
+    reads qc summary info, for each library id.
+
+    :param input_reads_qc: list of input reads qc summary info
+    :type input_reads_qc: list[dict]
+    :return: dict of harmonized input reads qc summary info, indexed by library id
+    :rtype: dict
+    """
+    output_fields = [
+        'library_id',
+        'total_bases_input_short',
+        'total_bases_input_long',
+    ]
+    harmonized_input_reads_qc_by_library_id = {}
+    for input_reads_qc_record in input_short_reads_qc:
+        if 'library_id' in input_reads_qc_record.keys():
+            library_id = input_reads_qc_record['library_id']
+        elif 'sample_id' in input_reads_qc_record.keys():
+            library_id = input_reads_qc_record['sample_id']
+        else:
+            continue
+        if library_id not in harmonized_input_reads_qc_by_library_id.keys():
+            harmonized_input_reads_qc_by_library_id[library_id] = {
+                'library_id': library_id,
+                'total_bases_input_short': None,
+                'total_bases_input_long': None,
+            }
+        if 'total_bases_before_filtering' in input_reads_qc_record.keys():
+            harmonized_input_reads_qc_by_library_id[library_id]['total_bases_input_short'] = input_reads_qc_record['total_bases_before_filtering']
+
+    for input_reads_qc_record in input_long_reads_qc:
+        if 'library_id' in input_reads_qc_record.keys():
+            library_id = input_reads_qc_record['library_id']
+        elif 'sample_id' in input_reads_qc_record.keys():
+            library_id = input_reads_qc_record['sample_id']
+        else:
+            continue
+        if library_id not in harmonized_input_reads_qc_by_library_id.keys():
+            harmonized_input_reads_qc_by_library_id[library_id] = {
+                'library_id': library_id,
+                'total_bases_input_long': None,
+            }
+            if 'bases' in input_reads_qc_record.keys():
+                harmonized_input_reads_qc_by_library_id[library_id]['total_bases_input_long'] = input_reads_qc_record['bases']
+
+    return harmonized_input_reads_qc_by_library_id
+
+
+
+def find_and_parse_input_reads_qc(assembly_mode_output_dir: Path) -> dict:
+    """
+    Depending on which type of assembly was performed, first find the appropriate qc summary file, then
+    dispatch to the appropriate parsing function and return the parsed qc summary info.
+
+    :param assembly_mode_output_dir: path to assembly mode output directory
+    :type assembly_mode_output_dir: Path
+    :return: dict of qc summary info
+    :rtype: dict
+    """
+    assembly_mode = os.path.basename(assembly_mode_output_dir)
+    sequencing_run_output_dir = os.path.dirname(assembly_mode_output_dir)
+    sequencing_run_id = os.path.basename(sequencing_run_output_dir)
+    input_short_reads_qc = []
+    input_long_reads_qc = []
+    if assembly_mode == 'short':
+        possible_qc_summary_filenames = [
+            sequencing_run_id + '_auto-cpo_qc_summary.csv',
+            sequencing_run_id + '_auto-cpo_sample_qc_summary.csv',
+        ]
+
+        for qc_summary_filename in possible_qc_summary_filenames:
+            qc_summary_path = os.path.join(assembly_mode_output_dir, qc_summary_filename)
+            if os.path.exists(qc_summary_path):
+                if '_sample_' in qc_summary_filename:
+                    input_short_reads_qc = parse_sample_qc_summary(qc_summary_path)
+                else:
+                    input_short_reads_qc = parse_qc_summary(qc_summary_path)
+                break
+    elif assembly_mode == 'hybrid':
+        basic_qc_stats_path = os.path.join(
+            assembly_mode_output_dir,
+            'basic-nanopore-qc-v0.1-output',
+            sequencing_run_id + '_basic_qc_stats.csv'
+        )
+        if os.path.exists(basic_qc_stats_path):
+            input_long_reads_qc = parse_nanopore_basic_qc_stats(basic_qc_stats_path)
+        plasmid_screen_fastp_csv_path = os.path.join(
+            assembly_mode_output_dir,
+            'plasmid-screen-v0.2-output',
+            sequencing_run_id + '_fastp.csv'
+        )
+        if os.path.exists(plasmid_screen_fastp_csv_path):
+            input_short_reads_qc = parse_fastp_csv(plasmid_screen_fastp_csv_path)
+
+    input_reads_qc_by_library_id = harmonize_input_reads_qc(input_short_reads_qc, input_long_reads_qc)
+    print(json.dumps(input_reads_qc_by_library_id, indent=2))
+    exit(0)
+    
+
+    return input_reads_qc_by_library_id
+
+
+        
+
+
+def call_overall_qc_pass_fail(qc_summary: dict) -> dict:
+    """
+    Determine overall pass/fail status for a library based on QC summary
+
+    :param qc_summary: dict of qc summary info
+    :type qc_summary: dict
+    :return: dict of qc summary info with overall pass/fail status
+    :rtype: dict
+    """
+    if qc_summary['total_bases_input_long_pass_fail'] == None:
+        qc_summary['overall_pass_fail'] = qc['total_bases_input_short_pass_fail']
+    else:
+        qc_summary['overall_pass_fail'] = 'FAIL'
+        qc_checks = [qc[field] for field in ['total_bases_input_long_pass_fail', 'total_bases_input_short_pass_fail']]
+        if not any([x == 'FAIL' for x in qc_checks]):
+            qc_summary['overall_pass_fail'] = 'WARN'
+        if all([x == 'PASS' for x in qc_checks]):
+            qc_summary['overall_pass_fail'] = 'PASS'
 
     return qc_summary
 
@@ -408,17 +614,46 @@ def parse_fastp_csv(fastp_csv_path: Path) -> dict:
     :return: dict of stats. Keys are: ['read1_mean_length', 'read2_mean_length', 'q30_rate_short']
     :rtype: dict
     """
-    fastp_stats = {}
-    fields_to_collect = {
-        'read1_mean_length_before_filtering': 'read1_mean_length',
-        'read2_mean_length_before_filtering': 'read2_mean_length',
-        'q30_rate_before_filtering':          'q30_rate_short',
-    }
+    fastp_stats = []
+    int_fields = [
+        'total_reads_before_filtering',
+        'total_reads_after_filtering',
+        'total_bases_before_filtering',
+        'total_bases_after_filtering',
+        'read1_mean_length_before_filtering',
+        'read1_mean_length_after_filtering',
+        'read2_mean_length_before_filtering',
+        'read2_mean_length_after_filtering',
+        'q20_bases_before_filtering',
+        'q20_bases_after_filtering',
+        'q30_bases_before_filtering',
+        'q30_bases_after_filtering',
+    ]
+
+    float_fields = [
+        'q20_rate_before_filtering',
+        'q20_rate_after_filtering',
+        'q30_rate_before_filtering',
+        'q30_rate_after_filtering',
+    ]
     with open(fastp_csv_path, 'r') as f:
         reader = csv.DictReader(f, dialect='unix')
         for row in reader:
-            for original_field, output_field in fields_to_collect.items():
-                fastp_stats[output_field] = row[original_field]
+            fastp_stats_record = {}
+            for k, v in row.items():
+                if k in int_fields:
+                    try:
+                        fastp_stats_record[k] = int(v)
+                    except ValueError:
+                        fastp_stats_record[k] = None
+                elif k in float_fields:
+                    try:
+                        fastp_stats_record[k] = float(v)
+                    except ValueError:
+                        fastp_stats_record[k] = None
+                else:
+                    fastp_stats_record[k] = v
+            fastp_stats.append(fastp_stats_record)
 
     return fastp_stats
 
@@ -549,7 +784,15 @@ def collect_assembly_results(assembly_output_dir, assembler):
     fastp_stats_by_sample_id = {}
     for fastp_stats_file in fastp_stats_files:
         sample_id = os.path.basename(fastp_stats_file).split('_')[0]
-        fastp_stats_by_sample_id[sample_id] = parse_fastp_csv(fastp_stats_file)
+        fastp_stats = parse_fastp_csv(fastp_stats_file)
+        for fastp_stats_record in fastp_stats:
+            if fastp_stats_record['sample_id'] == sample_id:
+                fastp_stats_by_sample_id[sample_id] = {
+                    'read1_mean_length': fastp_stats_record['read1_mean_length_before_filtering'],
+                    'read2_mean_length': fastp_stats_record['read2_mean_length_before_filtering'],
+                    'q30_rate_short': fastp_stats_record['q30_rate_before_filtering'],
+                }
+                break
     
     assembly_results_by_sample_id = fastp_stats_by_sample_id.copy()
 
@@ -618,21 +861,17 @@ def main(args):
         assembly_tool_name = 'unicycler'
         assembly_mode = 'short'
     elif instrument_type == 'nanopore':
-        assembly_output_dirname = 'dragonflye-nf-v0.1-output'
-        assembly_tool_name = 'dragonflye'
+        assembly_output_dirname = 'plasmid-assembly-v0.1-output'
+        assembly_tool_name = 'plassembler'
         assembly_mode = 'hybrid'
 
     assembly_mode_output_dir = os.path.join(args.analysis_dir, assembly_mode)
 
     qc_summary = {}
     if os.path.exists(assembly_mode_output_dir):
-
-        qc_summary_path = os.path.join(assembly_mode_output_dir, sequencing_run_id + '_auto-cpo_qc_summary.csv')
-        
-        qc_summary_path = os.path.join(assembly_mode_output_dir, sequencing_run_id + '_auto-cpo_qc_summary.csv')
-
-        if os.path.exists(qc_summary_path):
-            qc_summary = parse_qc_summary(qc_summary_path)
+        input_reads_qc = find_and_parse_input_reads_qc(assembly_mode_output_dir)
+        print(json.dumps(input_reads_qc, indent=4))
+        exit()
 
     core_results_by_sample_id = qc_summary.copy()
 
@@ -801,7 +1040,7 @@ def main(args):
             v['assembly_mode'] = assembly_mode
             plasmid_output.append(v)
 
-    plasmid_output_fieldnames = [
+    resistance_gene_output_fieldnames = [
         'sequencing_run_id',
         'library_id',
         'total_bases_input_short',
@@ -813,6 +1052,7 @@ def main(args):
         'assembly_mode',
         'resistance_gene_id',
         'resistance_gene_contig_id',
+        'resistance_gene_contig_localization',
         'resistance_gene_contig_size',
         'resistance_gene_percent_coverage',
         'resistance_gene_percent_identity',
