@@ -287,6 +287,8 @@ def harmonize_input_reads_qc(input_short_reads_qc: list[dict], input_long_reads_
             }
         if 'total_bases_before_filtering' in input_reads_qc_record.keys():
             harmonized_input_reads_qc_by_library_id[library_id]['total_bases_input_short'] = input_reads_qc_record['total_bases_before_filtering']
+        elif 'total_bases_input' in input_reads_qc_record.keys():
+            harmonized_input_reads_qc_by_library_id[library_id]['total_bases_input_short'] = input_reads_qc_record['total_bases_input']
 
     for input_reads_qc_record in input_long_reads_qc:
         if 'library_id' in input_reads_qc_record.keys():
@@ -298,10 +300,11 @@ def harmonize_input_reads_qc(input_short_reads_qc: list[dict], input_long_reads_
         if library_id not in harmonized_input_reads_qc_by_library_id.keys():
             harmonized_input_reads_qc_by_library_id[library_id] = {
                 'library_id': library_id,
+                'total_bases_input_short': None,
                 'total_bases_input_long': None,
             }
-            if 'bases' in input_reads_qc_record.keys():
-                harmonized_input_reads_qc_by_library_id[library_id]['total_bases_input_long'] = input_reads_qc_record['bases']
+        if 'bases' in input_reads_qc_record.keys():
+            harmonized_input_reads_qc_by_library_id[library_id]['total_bases_input_long'] = input_reads_qc_record['bases']
 
     return harmonized_input_reads_qc_by_library_id
 
@@ -353,14 +356,8 @@ def find_and_parse_input_reads_qc(assembly_mode_output_dir: Path) -> dict:
             input_short_reads_qc = parse_fastp_csv(plasmid_screen_fastp_csv_path)
 
     input_reads_qc_by_library_id = harmonize_input_reads_qc(input_short_reads_qc, input_long_reads_qc)
-    print(json.dumps(input_reads_qc_by_library_id, indent=2))
-    exit(0)
-    
 
     return input_reads_qc_by_library_id
-
-
-        
 
 
 def call_overall_qc_pass_fail(qc_summary: dict) -> dict:
@@ -867,13 +864,14 @@ def main(args):
 
     assembly_mode_output_dir = os.path.join(args.analysis_dir, assembly_mode)
 
-    qc_summary = {}
+    input_reads_qc = {}
     if os.path.exists(assembly_mode_output_dir):
         input_reads_qc = find_and_parse_input_reads_qc(assembly_mode_output_dir)
-        print(json.dumps(input_reads_qc, indent=4))
-        exit()
 
-    core_results_by_sample_id = qc_summary.copy()
+    # TODO: continue development from here...
+    #       implement qc pass/fail calling
+
+    core_results_by_sample_id = input_reads_qc.copy()
 
     assembly_output_subdir = os.path.join(assembly_mode_output_dir, assembly_output_dirname)
     assembly_results_by_sample_id = collect_assembly_results(assembly_output_subdir, assembly_tool_name)
