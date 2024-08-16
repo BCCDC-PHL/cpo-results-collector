@@ -282,8 +282,8 @@ def harmonize_input_reads_qc(input_short_reads_qc: list[dict], input_long_reads_
         if library_id not in harmonized_input_reads_qc_by_library_id.keys():
             harmonized_input_reads_qc_by_library_id[library_id] = {
                 'library_id': library_id,
-                'total_bases_input_short': None,
-                'total_bases_input_long': None,
+                'total_bases_input_short': 0,
+                'total_bases_input_long': 0,
             }
         if 'total_bases_before_filtering' in input_reads_qc_record.keys():
             harmonized_input_reads_qc_by_library_id[library_id]['total_bases_input_short'] = input_reads_qc_record['total_bases_before_filtering']
@@ -300,8 +300,8 @@ def harmonize_input_reads_qc(input_short_reads_qc: list[dict], input_long_reads_
         if library_id not in harmonized_input_reads_qc_by_library_id.keys():
             harmonized_input_reads_qc_by_library_id[library_id] = {
                 'library_id': library_id,
-                'total_bases_input_short': None,
-                'total_bases_input_long': None,
+                'total_bases_input_short': 0,
+                'total_bases_input_long': 0,
             }
         if 'bases' in input_reads_qc_record.keys():
             harmonized_input_reads_qc_by_library_id[library_id]['total_bases_input_long'] = input_reads_qc_record['bases']
@@ -360,26 +360,71 @@ def find_and_parse_input_reads_qc(assembly_mode_output_dir: Path) -> dict:
     return input_reads_qc_by_library_id
 
 
-def call_overall_qc_pass_fail(qc_summary: dict) -> dict:
+def call_qc_pass_fail(input_reads_qc_by_library_id: dict, qc_criteria: dict, assembly_mode: str) -> dict:
     """
     Determine overall pass/fail status for a library based on QC summary
 
-    :param qc_summary: dict of qc summary info
-    :type qc_summary: dict
-    :return: dict of qc summary info with overall pass/fail status
+    :param input_reads_qc_by_library_id: dict of input reads qc summary info, indexed by library id
+    :type input_reads_qc_by_library_id: dict
+    :return: dict of qc info, with pass/fail status
     :rtype: dict
     """
-    if qc_summary['total_bases_input_long_pass_fail'] == None:
-        qc_summary['overall_pass_fail'] = qc['total_bases_input_short_pass_fail']
-    else:
-        qc_summary['overall_pass_fail'] = 'FAIL'
-        qc_checks = [qc[field] for field in ['total_bases_input_long_pass_fail', 'total_bases_input_short_pass_fail']]
-        if not any([x == 'FAIL' for x in qc_checks]):
-            qc_summary['overall_pass_fail'] = 'WARN'
-        if all([x == 'PASS' for x in qc_checks]):
-            qc_summary['overall_pass_fail'] = 'PASS'
+    min_bases_short = qc_criteria.get('min_total_bases_input_short', None)
+    min_bases_long = qc_criteria.get('min_total_bases_input_long', None)
+    if not min_bases_short and not min_bases_long:
+        for library_id, qc in input_reads_qc_by_library_id.items():
+            input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] = None
+            input_reads_qc_by_library_id[library_id]['total_bases_input_long_pass_fail'] = None
+            input_reads_qc_by_library_id[library_id]['overall_pass_fail'] = None
+        return input_reads_qc_by_library_id
 
-    return qc_summary
+    if assembly_mode == 'short':
+        for library_id, qc in input_reads_qc_by_library_id.items():
+            total_bases_input_short = qc.get('total_bases_input_short', None)
+            if total_bases_input_short is not None:
+                if total_bases_input_short >= min_bases_short:
+                    input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] = 'PASS'
+                else:
+                    input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] = 'FAIL'
+            else:
+                input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] = None
+
+            input_reads_qc_by_library_id[library_id]['total_bases_input_long_pass_fail'] = 'NA'
+            if input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] == 'FAIL':
+                input_reads_qc_by_library_id[library_id]['overall_pass_fail'] = 'FAIL'
+            else:
+                input_reads_qc_by_library_id[library_id]['overall_pass_fail'] = 'PASS'
+
+        return input_reads_qc_by_library_id
+
+    if assembly_mode == 'hybrid':
+        for library_id, qc in input_reads_qc_by_library_id.items():
+            total_bases_input_short = qc.get('total_bases_input_short', None)
+            if total_bases_input_short is not None:
+                if total_bases_input_short >= min_bases_short:
+                    input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] = 'PASS'
+                else:
+                    input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] = 'FAIL'
+            else:
+                input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] = None
+
+        for library_id, qc in input_reads_qc_by_library_id.items():
+            total_bases_input_long = qc.get('total_bases_input_long', None)
+            if total_bases_input_long is not None:
+                if total_bases_input_long >= min_bases_long:
+                    input_reads_qc_by_library_id[library_id]['total_bases_input_long_pass_fail'] = 'PASS'
+                else:
+                    input_reads_qc_by_library_id[library_id]['total_bases_input_long_pass_fail'] = 'FAIL'
+            else:
+                input_reads_qc_by_library_id[library_id]['total_bases_input_long_pass_fail'] = None
+
+            if input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] == 'FAIL' or \
+               input_reads_qc_by_library_id[library_id]['total_bases_input_long_pass_fail'] == 'FAIL':
+                input_reads_qc_by_library_id[library_id]['overall_pass_fail'] = 'FAIL'
+            else:
+                input_reads_qc_by_library_id[library_id]['overall_pass_fail'] = 'PASS'
+
+    return input_reads_qc_by_library_id
 
 
 def parse_mlst_sequence_type(mlst_sequence_type_csv_path: Path) -> dict:
@@ -864,14 +909,18 @@ def main(args):
 
     assembly_mode_output_dir = os.path.join(args.analysis_dir, assembly_mode)
 
-    input_reads_qc = {}
+    input_reads_qc_by_sample_id = {}
     if os.path.exists(assembly_mode_output_dir):
-        input_reads_qc = find_and_parse_input_reads_qc(assembly_mode_output_dir)
+        input_reads_qc_by_sample_id = find_and_parse_input_reads_qc(assembly_mode_output_dir)
 
-    # TODO: continue development from here...
-    #       implement qc pass/fail calling
+    qc_criteria = {
+        'min_total_bases_input_short': args.min_total_bases_input_short,
+        'min_total_bases_input_long': args.min_total_bases_input_long,
+    }
 
-    core_results_by_sample_id = input_reads_qc.copy()
+    input_reads_qc_with_pass_fail_by_sample_id = call_qc_pass_fail(input_reads_qc_by_sample_id, qc_criteria, assembly_mode)
+    
+    core_results_by_sample_id = input_reads_qc_with_pass_fail_by_sample_id.copy()
 
     assembly_output_subdir = os.path.join(assembly_mode_output_dir, assembly_output_dirname)
     assembly_results_by_sample_id = collect_assembly_results(assembly_output_subdir, assembly_tool_name)
@@ -931,7 +980,6 @@ def main(args):
     for k, v in core_results_by_sample_id.items():
         v['sequencing_run_id'] = sequencing_run_id
         v['library_id'] = k
-        v['assembly_tool_name'] = args.assembler
         v['assembly_mode'] = assembly_mode
         core_output.append(v)
 
@@ -1034,7 +1082,6 @@ def main(args):
         for v in vs:
             v['sequencing_run_id'] = sequencing_run_id
             v['library_id'] = k
-            v['assembly_tool_name'] = args.assembler
             v['assembly_mode'] = assembly_mode
             plasmid_output.append(v)
 
@@ -1088,7 +1135,7 @@ def main(args):
     written_plasmid_rows = set()
     if args.plasmid_output:
         with open(args.plasmid_output, 'w') as f:
-            plasmid_output_writer = csv.DictWriter(f, fieldnames=plasmid_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
+            plasmid_output_writer = csv.DictWriter(f, fieldnames=resistance_gene_output_fieldnames, dialect='excel-tab', quoting=csv.QUOTE_MINIMAL)
             if not args.noheader:
                 plasmid_output_writer.writeheader()
             for o in plasmid_output:
@@ -1106,7 +1153,8 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--analysis-dir')
-    parser.add_argument('-a', '--assembler', default='unicycler')
+    parser.add_argument('--min-total-bases-input-short', type=int, default=250_000_000)
+    parser.add_argument('--min-total-bases-input-long', type=int, default=250_000_000)
     parser.add_argument('--noheader', action='store_true')
     parser.add_argument('--output')
     parser.add_argument('--plasmid-output')
