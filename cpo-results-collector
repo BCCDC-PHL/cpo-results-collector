@@ -87,6 +87,12 @@ def parse_assembly_provenance(provenance_path: Path) -> dict:
             assembly_provenance['assembly_pipeline_name'] = provenance_item['pipeline_name']
         if 'pipeline_version' in provenance_item:
             assembly_provenance['assembly_pipeline_version'] = provenance_item['pipeline_version']
+        if 'process_name' in provenance_item and provenance_item['process_name'] == 'unicycler':
+            tools = provenance_item['tools']
+            for tool in tools:
+                if tool['tool_name'] == 'unicycler':
+                    assembly_provenance['assembly_tool_name'] = tool['tool_name']
+                    assembly_provenance['assembly_tool_version'] = tool['tool_version']
 
     return assembly_provenance
 
@@ -389,7 +395,7 @@ def call_qc_pass_fail(input_reads_qc_by_library_id: dict, qc_criteria: dict, ass
             else:
                 input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] = None
 
-            input_reads_qc_by_library_id[library_id]['total_bases_input_long_pass_fail'] = 'NA'
+            input_reads_qc_by_library_id[library_id]['total_bases_input_long_pass_fail'] = '-'
             if input_reads_qc_by_library_id[library_id]['total_bases_input_short_pass_fail'] == 'FAIL':
                 input_reads_qc_by_library_id[library_id]['overall_pass_fail'] = 'FAIL'
             else:
@@ -621,6 +627,12 @@ def parse_resistance_gene_report(resistance_gene_report_tsv_path: Path) -> list[
                 gene = {}
                 for original_field, output_field in fields_to_collect.items():
                     gene[output_field] = row[original_field]
+                contig_localization = None
+                if 'chromosome' in row['assembly_file']:
+                    contig_localization = 'chromosome'
+                elif 'plasmid' in row['assembly_file']:
+                    contig_localization = 'plasmid'
+                gene['resistance_gene_contig_localization'] = contig_localization
                 resistance_genes.append(gene)
     except FileNotFoundError as e:
         resistance_genes = [null_output]
@@ -638,12 +650,62 @@ def collect_plasmid_results(plasmid_screen_output_dir: Path) -> dict:
     :rtype: dict
     """
     plasmid_results_by_sample_id = {}
+    chromosomal_carbapenemases_by_sample_id = {}
+
+    # Although we're collecting plasmid results here, we occasionally see carbapenemases that are
+    # assigned to the chromosome. Those are sometimes missed in the 'resistance_gene_report.tsv' files.
+    # So we'll collect all any chromosomal carbapenemases here and make sure they're included in the
+    # plasmid results.
+    abricate_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_abricate.tsv'))
+    abricate_ncbi_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_abricate_ncbi.tsv'))
+    all_abricate_report_files = abricate_report_files + abricate_ncbi_report_files
+    for abricate_report_file in all_abricate_report_files:
+        sample_id = os.path.basename(abricate_report_file).split('_')[0]
+        abricate_report = parse_abricate_report(abricate_report_file)
+        abricate_carbapenemases = [x for x in abricate_report if 'CARBAPENEM' in x['resistance']]
+        chromosomal_carbapenemases = [x for x in abricate_carbapenemases if 'chromosome' in x['contig_localization']]
+        chromosomal_carbapenemases_by_sample_id[sample_id] = chromosomal_carbapenemases
+
     resistance_gene_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_resistance_gene_report.tsv'))
     for resistance_gene_report_file in resistance_gene_report_files:
         sample_id = os.path.basename(resistance_gene_report_file).split('_')[0]
         resistance_genes = parse_resistance_gene_report(resistance_gene_report_file)
         plasmid_results_by_sample_id[sample_id] = resistance_genes
 
+    for sample_id, chromosomal_carbapenemases in chromosomal_carbapenemases_by_sample_id.items():
+        if sample_id not in plasmid_results_by_sample_id.keys():
+            plasmid_results_by_sample_id[sample_id] = []
+        for chromosomal_carbapenemase in chromosomal_carbapenemases:
+            chromosomal_carbapenemase_plasmid_result_record = {
+                'resistance_gene_id': chromosomal_carbapenemase['gene'],
+                'resistance_gene_contig_localization': chromosomal_carbapenemase['contig_localization'],
+                'resistance_gene_contig_id': chromosomal_carbapenemase['contig_id'],
+                'resistance_gene_percent_coverage': chromosomal_carbapenemase['percent_coverage'],
+                'resistance_gene_percent_identity': chromosomal_carbapenemase['percent_identity'],
+                'plasmid_num_contigs': '-',
+                'plasmid_size': '-',
+                'plasmid_replicon_types': '-',
+                'plasmid_mob_suite_primary_cluster_id': '-',
+                'plasmid_mob_suite_secondary_cluster_id': '-',
+                'plasmid_mash_nearest_neighbor': '-',
+                'plasmid_alignment_ref': '-',
+                'plasmid_alignment_depth_threshold': '-',
+                'plasmid_alignment_percent_coverage_above_depth_threshold': '-',
+                'plasmid_alignment_num_snps': '-',
+            }
+            carbapenemase_found = False
+            for resistance_gene in plasmid_results_by_sample_id[sample_id]:
+                conditions_checked = {
+                    'resistance_gene_id': resistance_gene['resistance_gene_id'] == chromosomal_carbapenemase_plasmid_result_record['resistance_gene_id'],
+                    'resistance_gene_contig_id': resistance_gene['resistance_gene_contig_id'] == chromosomal_carbapenemase_plasmid_result_record['resistance_gene_contig_id'],
+                }
+                if all(conditions_checked.values()):
+                    carbapenemase_found = True
+                    break
+
+            if not carbapenemase_found:
+                plasmid_results_by_sample_id[sample_id].append(chromosomal_carbapenemase_plasmid_result_record)
+        
     return plasmid_results_by_sample_id
 
 
@@ -922,6 +984,10 @@ def main(args):
     
     core_results_by_sample_id = input_reads_qc_with_pass_fail_by_sample_id.copy()
 
+    for sample_id, core_results in core_results_by_sample_id.items():
+        core_results['assembly_tool_name'] = assembly_tool_name
+        
+
     assembly_output_subdir = os.path.join(assembly_mode_output_dir, assembly_output_dirname)
     assembly_results_by_sample_id = collect_assembly_results(assembly_output_subdir, assembly_tool_name)
     for sample_id in assembly_results_by_sample_id.keys():
@@ -1006,6 +1072,7 @@ def main(args):
         'assembly_pipeline_name',
         'assembly_pipeline_version',
         'assembly_tool_name',
+        'assembly_tool_version',
         'assembly_mode',
         'mlst_scheme',
         'mlst_sequence_type',
@@ -1083,6 +1150,7 @@ def main(args):
             v['sequencing_run_id'] = sequencing_run_id
             v['library_id'] = k
             v['assembly_mode'] = assembly_mode
+            v['assembly_tool_name'] = assembly_tool_name
             plasmid_output.append(v)
 
     resistance_gene_output_fieldnames = [
