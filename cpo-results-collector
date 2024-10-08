@@ -93,6 +93,12 @@ def parse_assembly_provenance(provenance_path: Path) -> dict:
                 if tool['tool_name'] == 'unicycler':
                     assembly_provenance['assembly_tool_name'] = tool['tool_name']
                     assembly_provenance['assembly_tool_version'] = tool['tool_version']
+        if 'process_name' in provenance_item and provenance_item['process_name'] == 'plassembler':
+            tools = provenance_item['tools']
+            for tool in tools:
+                if tool['tool_name'] == 'plassembler':
+                    assembly_provenance['assembly_tool_name'] = tool['tool_name']
+                    assembly_provenance['assembly_tool_version'] = tool['tool_version']
 
     return assembly_provenance
 
@@ -1126,32 +1132,35 @@ def main(args):
                 output_writer.writerow(o)
 
 
-    for k, v in core_results_by_sample_id.items():
-        if k in plasmid_results_by_sample_id.keys():
-            for plasmid_result in plasmid_results_by_sample_id[k]:
-                plasmid_result['total_bases_input_short'] = v['total_bases_input_short']
-                plasmid_result['total_bases_input_short_pass_fail'] = v['total_bases_input_short_pass_fail']
-                plasmid_result['total_bases_input_long'] = v['total_bases_input_long']
-                plasmid_result['total_bases_input_long_pass_fail'] = v['total_bases_input_long_pass_fail']
-                plasmid_result['overall_pass_fail'] = v['overall_pass_fail']
+    for sample_id, core_results in core_results_by_sample_id.items():
+        if sample_id in plasmid_results_by_sample_id.keys():
+            for plasmid_result in plasmid_results_by_sample_id[sample_id]:
+                plasmid_result['total_bases_input_short'] = core_results['total_bases_input_short']
+                plasmid_result['total_bases_input_short_pass_fail'] = core_results['total_bases_input_short_pass_fail']
+                plasmid_result['total_bases_input_long'] = core_results['total_bases_input_long']
+                plasmid_result['total_bases_input_long_pass_fail'] = core_results['total_bases_input_long_pass_fail']
+                plasmid_result['overall_pass_fail'] = core_results['overall_pass_fail']
         else:
-            plasmid_results_by_sample_id[k] = [
+            plasmid_results_by_sample_id[sample_id] = [
                 {
-                    'total_bases_input_short': v['total_bases_input_short'],
-                    'total_bases_input_short_pass_fail': v['total_bases_input_short_pass_fail'],
-                    'total_bases_input_long': v['total_bases_input_long'],
-                    'total_bases_input_long_pass_fail': v['total_bases_input_long_pass_fail'],
-                    'overall_pass_fail': v['overall_pass_fail'],
+                    'total_bases_input_short': core_results['total_bases_input_short'],
+                    'total_bases_input_short_pass_fail': core_results['total_bases_input_short_pass_fail'],
+                    'total_bases_input_long': core_results['total_bases_input_long'],
+                    'total_bases_input_long_pass_fail': core_results['total_bases_input_long_pass_fail'],
+                    'overall_pass_fail': core_results['overall_pass_fail'],
                 }
             ]
             
-    for k, vs in plasmid_results_by_sample_id.items():
-        for v in vs:
-            v['sequencing_run_id'] = sequencing_run_id
-            v['library_id'] = k
-            v['assembly_mode'] = assembly_mode
-            v['assembly_tool_name'] = assembly_tool_name
-            plasmid_output.append(v)
+    for sample_id, plasmid_results in plasmid_results_by_sample_id.items():
+        for plasmid_result in plasmid_results:
+            plasmid_result['sequencing_run_id'] = sequencing_run_id
+            plasmid_result['library_id'] = sample_id
+            plasmid_result['assembly_mode'] = assembly_mode
+            plasmid_result['assembly_tool_name'] = assembly_tool_name
+            plasmid_result['assembly_tool_version'] = None
+            if sample_id in assembly_results_by_sample_id.keys():
+                plasmid_result['assembly_tool_version'] = assembly_results_by_sample_id[k].get('assembly_tool_version', None)
+            plasmid_output.append(plasmid_result)
 
     resistance_gene_output_fieldnames = [
         'sequencing_run_id',
@@ -1162,6 +1171,7 @@ def main(args):
         'total_bases_input_long_pass_fail',
         'overall_pass_fail',
         'assembly_tool_name',
+        'assembly_tool_version',
         'assembly_mode',
         'resistance_gene_id',
         'resistance_gene_contig_id',
@@ -1181,6 +1191,18 @@ def main(args):
         'plasmid_alignment_num_snps',
     ]
 
+    for sample_id, core_results in core_results_by_sample_id.items():
+        if sample_id not in plasmid_results_by_sample_id.keys():
+            plasmid_results_by_sample_id[sample_id] = [
+                {
+                    'total_bases_input_short': core_results['total_bases_input_short'],
+                    'total_bases_input_short_pass_fail': core_results['total_bases_input_short_pass_fail'],
+                    'total_bases_input_long': core_results['total_bases_input_long'],
+                    'total_bases_input_long_pass_fail': core_results['total_bases_input_long_pass_fail'],
+                    'overall_pass_fail': core_results['overall_pass_fail'],
+                }
+            ]
+
     for idx, line in enumerate(plasmid_output):
         sequencing_run_id = line['sequencing_run_id']
         library_id = line['library_id']
@@ -1189,6 +1211,7 @@ def main(args):
         total_bases_input_long = line['total_bases_input_long']
         total_bases_input_long_pass_fail = line['total_bases_input_long_pass_fail']
         overall_pass_fail = line['overall_pass_fail']
+        # Blank out all result fields if the overall pass/fail is FAIL
         if overall_pass_fail == 'FAIL':
             line = {k: None for k in line.keys()}
             line['sequencing_run_id'] = sequencing_run_id
