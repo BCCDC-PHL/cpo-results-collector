@@ -96,6 +96,25 @@ def parse_taxon_abundance_provenance(provenance_path):
     return taxon_abundance_provenance
 
 
+def parse_plasmid_screen_provenance(provenance_path):
+    """
+    """
+    parsed_provenance = parse_provenance(provenance_path)
+    plasmid_screen_provenance = {}
+    plasmid_database_directory = None
+    for provenance_item in parsed_provenance:
+        if 'process_name' in provenance_item and provenance_item['process_name'] == 'mob_recon':
+            for tool in provenance_item['tools']:
+                if tool['tool_name'] == 'mob_recon':
+                    for parameter in tool['parameters']:
+                        if parameter['parameter'] == 'database_directory':
+                            plasmid_database_directory = parameter['value']
+
+    plasmid_screen_provenance['plasmid_database_directory'] = plasmid_database_directory
+
+    return plasmid_screen_provenance
+
+
 def parse_qc_summary(qc_summary_path):
     qc_summary = {}
     with open(qc_summary_path, 'r') as f:
@@ -121,7 +140,13 @@ def parse_qc_summary(qc_summary_path):
             else:
                 qc['total_bases_input_long_pass_fail'] = None
 
-            if qc['total_bases_input_long_pass_fail'] == None:
+            if qc['total_bases_input_long_pass_fail'] == None and 'total_bases_input_short_pass_fail' in qc:
+                qc['overall_pass_fail'] = qc['total_bases_input_short_pass_fail']
+            elif qc['total_bases_input_long_pass_fail'] == None:
+                if qc['total_bases_input_short'] > 250_000_000:
+                    qc['total_bases_input_short_pass_fail'] = 'PASS'
+                else:
+                    qc['total_bases_input_short_pass_fail'] = 'FAIL'
                 qc['overall_pass_fail'] = qc['total_bases_input_short_pass_fail']
             else:
                 qc['overall_pass_fail'] = 'FAIL'
@@ -291,11 +316,29 @@ def parse_resistance_gene_report(resistance_gene_report_tsv_path):
 
 def collect_plasmid_results(plasmid_screen_output_dir):
     plasmid_results_by_sample_id = {}
+    plasmid_screen_provenance_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_provenance.yml'))
+    first_plasmid_screen_provenance_file = plasmid_screen_provenance_files[0]
+    plasmid_screen_provenance = parse_plasmid_screen_provenance(first_plasmid_screen_provenance_file)
+    plasmid_database_directory = plasmid_screen_provenance['plasmid_database_directory']
+    plasmid_database_metadata_file = os.path.join(plasmid_database_directory, 'metadata.json')
+    plasmid_database_metadata = {
+        'dbname': None,
+        'version': None,
+        'date': None,
+    }
+    if os.path.exists(plasmid_database_metadata_file):
+        with open(plasmid_database_metadata_file, 'r') as f:
+            plasmid_database_metadata = json.load(f)
+    
     resistance_gene_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_resistance_gene_report.tsv'))
     for resistance_gene_report_file in resistance_gene_report_files:
         sample_id = os.path.basename(resistance_gene_report_file).split('_')[0]
         resistance_genes = parse_resistance_gene_report(resistance_gene_report_file)
         plasmid_results_by_sample_id[sample_id] = resistance_genes
+        for sample_plasmid_results in plasmid_results_by_sample_id[sample_id]:
+            sample_plasmid_results['plasmid_database_name'] = plasmid_database_metadata['dbname']
+            sample_plasmid_results['plasmid_database_version'] = plasmid_database_metadata['version']
+            sample_plasmid_results['plasmid_database_date'] = plasmid_database_metadata['date']
 
     return plasmid_results_by_sample_id
 
@@ -446,11 +489,15 @@ def main(args):
     if os.path.exists(assembly_mode_output_dir):
 
         qc_summary_path = os.path.join(assembly_mode_output_dir, sequencing_run_id + '_auto-cpo_qc_summary.csv')
-        
-        qc_summary_path = os.path.join(assembly_mode_output_dir, sequencing_run_id + '_auto-cpo_qc_summary.csv')
+
+        if not os.path.exists(qc_summary_path):
+            qc_summary_path = os.path.join(assembly_mode_output_dir, sequencing_run_id + '_auto-cpo_sample_qc_summary.csv')
 
         if os.path.exists(qc_summary_path):
             qc_summary = parse_qc_summary(qc_summary_path)
+        else:
+            print(f"Error: No QC summary file found for run {sequencing_run_id}")
+            exit()
 
     core_results_by_sample_id = qc_summary.copy()
 
@@ -644,6 +691,9 @@ def main(args):
         'plasmid_alignment_depth_threshold',
         'plasmid_alignment_percent_coverage_above_depth_threshold',
         'plasmid_alignment_num_snps',
+        'plasmid_database_name',
+        'plasmid_database_version',
+        'plasmid_database_date',
     ]
 
     for idx, line in enumerate(plasmid_output):
