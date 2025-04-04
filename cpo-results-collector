@@ -743,6 +743,9 @@ def main(args):
         v['library_id'] = k
         v['assembly_tool_name'] = args.assembler
         v['assembly_mode'] = assembly_mode
+        v['carbapenemase_detected'] = False
+        if v['library_id'] in plasmid_results_by_sample_id:
+            v['carbapenemase_detected'] = True
         core_output.append(v)
 
     output_fieldnames = [
@@ -753,6 +756,7 @@ def main(args):
         'total_bases_input_long',
         'total_bases_input_long_pass_fail',
         'overall_pass_fail',
+        'carbapenemase_detected',
         'read1_mean_length',
         'read2_mean_length',
         'q30_rate_short',
