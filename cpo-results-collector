@@ -415,19 +415,21 @@ def collect_plasmid_results(plasmid_screen_output_dir: Path):
     """
     plasmid_results_by_sample_id = {}
 
-    plasmid_screen_provenance_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_provenance.yml'))
-    first_plasmid_screen_provenance_file = plasmid_screen_provenance_files[0]
-    plasmid_screen_provenance = parse_plasmid_screen_provenance(first_plasmid_screen_provenance_file)
-    plasmid_database_directory = plasmid_screen_provenance['plasmid_database_directory']
-    plasmid_database_metadata_file = os.path.join(plasmid_database_directory, 'metadata.json')
     plasmid_database_metadata = {
         'dbname': None,
         'version': None,
         'date': None,
     }
-    if os.path.exists(plasmid_database_metadata_file):
-        with open(plasmid_database_metadata_file, 'r') as f:
-            plasmid_database_metadata = json.load(f)
+    plasmid_screen_provenance_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_provenance.yml'))
+    if len(plasmid_screen_provenance_files) > 0:
+        first_plasmid_screen_provenance_file = plasmid_screen_provenance_files[0]
+        plasmid_screen_provenance = parse_plasmid_screen_provenance(first_plasmid_screen_provenance_file)
+        plasmid_database_directory = plasmid_screen_provenance['plasmid_database_directory']
+        plasmid_database_metadata_file = os.path.join(plasmid_database_directory, 'metadata.json')
+        
+        if os.path.exists(plasmid_database_metadata_file):
+            with open(plasmid_database_metadata_file, 'r') as f:
+                plasmid_database_metadata = json.load(f)
     
     resistance_gene_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_resistance_gene_report.tsv'))
     for resistance_gene_report_file in resistance_gene_report_files:
@@ -467,7 +469,7 @@ def collect_plasmid_results(plasmid_screen_output_dir: Path):
                 'contig_id': 'resistance_gene_contig_id',
             }
             if sample_id not in plasmid_results_by_sample_id:
-                break
+                continue
             for plasmid_result in plasmid_results_by_sample_id[sample_id]:
                 match_found = all([chromosomal_carbapenemase[chromosomal_key] == plasmid_result[plasmid_result_key] for chromosomal_key, plasmid_result_key in fields_to_compare.items()])
                 if match_found:
@@ -478,6 +480,9 @@ def collect_plasmid_results(plasmid_screen_output_dir: Path):
     # We report any carbapenemase gene found.
     for sample_id, chromosomal_carbapenemases in chromosomal_carbapenemases_by_sample_id.items():
         for chromosomal_carbapenemase in chromosomal_carbapenemases:
+            if 'present_in_plasmid_results' not in chromosomal_carbapenemase:
+                print(json.dumps(chromosomal_carbapenemases_by_sample_id[sample_id], indent=2))
+                exit()
             if not chromosomal_carbapenemase['present_in_plasmid_results']:
                 if sample_id not in plasmid_results_by_sample_id:
                     plasmid_results_by_sample_id[sample_id] = []
@@ -850,7 +855,8 @@ def main(args):
             v['library_id'] = k
             v['assembly_tool_name'] = args.assembler
             v['assembly_mode'] = assembly_mode
-            plasmid_output.append(v)
+            if 'resistance_gene_id' in v and v['resistance_gene_id'] and v['resistance_gene_id'] != '':
+                plasmid_output.append(v)
 
     plasmid_output_fieldnames = [
         'sequencing_run_id',
