@@ -11,7 +11,12 @@ import yaml
 
 from pathlib import Path
 
+
 def jdump(x):
+    """
+    Helper function, useful for debugging. Prints
+    data structures in json format.
+    """
     print(json.dumps(x, indent=2))
 
 
@@ -47,8 +52,14 @@ def join_indexed_dicts(dict_1: dict, dict_2: dict) -> dict:
     return joined_dict
 
 
-def parse_provenance(provenance_path: Path):
+def parse_provenance(provenance_path: Path) -> list[dict]:
     """
+    Parse a yaml-formatted provenance file.
+
+    :param provenance_path: Path to the provenance file
+    :type provenance_path: Path
+    :return: The parsed provenance file, as a list of dicts
+    :rtype: list[dict]
     """
     with open(provenance_path, 'r') as f:
         try:
@@ -63,8 +74,15 @@ def parse_provenance(provenance_path: Path):
     return(parsed_provenance)
 
 
-def parse_assembly_provenance(provenance_path: Path):
+def parse_assembly_provenance(provenance_path: Path) -> dict:
     """
+    Parse a provenance file from the BCCDC-PHL/routine-assembly pipeline, and
+    pick out the pieces of provenance that are relevant for our outputs.
+
+    :param provenance_path: Path to provenanve file
+    :type provenance_path: Path
+    :return: The parsed assembly provenance. Keys: 'assembly_pipeline_name', 'assembly_pipeline_version'
+    :rtype: dict
     """
     parsed_provenance = parse_provenance(provenance_path)
     assembly_provenance = {}
@@ -77,8 +95,15 @@ def parse_assembly_provenance(provenance_path: Path):
     return assembly_provenance
 
 
-def parse_mlst_provenance(provenance_path: Path):
+def parse_mlst_provenance(provenance_path: Path) -> dict:
     """
+    Parse a provenance file from the BCCDC-PHL/mlst-nf pipeline, and
+    pick out the pieces of provenance that are relevant for our outputs.
+
+    :param provenance_path: Path to provenanve file
+    :type provenance_path: Path
+    :return: The parsed assembly provenance. Keys: 'mlst_pipeline_name', 'mlst_pipeline_version'
+    :rtype: dict
     """
     parsed_provenance = parse_provenance(provenance_path)
     mlst_provenance = {}
@@ -91,8 +116,15 @@ def parse_mlst_provenance(provenance_path: Path):
     return mlst_provenance
 
 
-def parse_taxon_abundance_provenance(provenance_path: Path):
+def parse_taxon_abundance_provenance(provenance_path: Path) -> dict:
     """
+    Parse a provenance file from the BCCDC-PHL/taxon-abundance pipeline, and
+    pick out the pieces of provenance that are relevant for our outputs.
+
+    :param provenance_path: Path to provenanve file
+    :type provenance_path: Path
+    :return: The parsed assembly provenance. Keys: 'species_pipeline_name', 'species_pipeline_version'
+    :rtype: dict
     """
     parsed_provenance = parse_provenance(provenance_path)
     taxon_abundance_provenance = {}
@@ -105,8 +137,15 @@ def parse_taxon_abundance_provenance(provenance_path: Path):
     return taxon_abundance_provenance
 
 
-def parse_plasmid_screen_provenance(provenance_path):
+def parse_plasmid_screen_provenance(provenance_path: Path) -> dict:
     """
+    Parse a provenance file from the BCCDC-PHL/plasmid-screen pipeline, and
+    pick out the pieces of provenance that are relevant for our outputs.
+
+    :param provenance_path: Path to provenanve file
+    :type provenance_path: Path
+    :return: The parsed assembly provenance. Keys: 'plasmid_database_directory', 'species_pipeline_version'
+    :rtype: dict
     """
     parsed_provenance = parse_provenance(provenance_path)
     plasmid_screen_provenance = {}
@@ -124,8 +163,16 @@ def parse_plasmid_screen_provenance(provenance_path):
     return plasmid_screen_provenance
 
 
-def parse_qc_summary(qc_summary_path: Path):
+def parse_qc_summary(qc_summary_path: Path) -> dict:
     """
+    Parse a QC summary file, and return a dictionary of QC data, indexed by library_id.
+
+    :param qc_summary_path: Path to QC summary file
+    :type qc_summary_path: Path
+    :return: Dictionary of QC summary data, indexed by library_id. 
+             Inner keys: 'total_bases_input_short', 'total_bases_input_long', 'total_bases_input_short_pass_fail',
+                         'total_bases_input_long_pass_fail', 'overall_pass_fail'
+    :rtype: dict[dict]
     """
     qc_summary = {}
     with open(qc_summary_path, 'r') as f:
