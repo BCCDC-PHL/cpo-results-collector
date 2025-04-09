@@ -9,12 +9,18 @@ import re
 import sys
 import yaml
 
+from pathlib import Path
+
 
 def jdump(x):
+    """
+    Helper function, useful for debugging. Prints
+    data structures in json format.
+    """
     print(json.dumps(x, indent=2))
 
 
-def join_indexed_dicts(dict_1, dict_2):
+def join_indexed_dicts(dict_1: dict, dict_2: dict) -> dict:
     """
     dict_1 is a dict of dicts, where the keys of the outer dict are the index
     dict_2 is a dict of dicts, where the keys of the outer dict are the index
@@ -46,7 +52,15 @@ def join_indexed_dicts(dict_1, dict_2):
     return joined_dict
 
 
-def parse_provenance(provenance_path):
+def parse_provenance(provenance_path: Path) -> list[dict]:
+    """
+    Parse a yaml-formatted provenance file.
+
+    :param provenance_path: Path to the provenance file
+    :type provenance_path: Path
+    :return: The parsed provenance file, as a list of dicts
+    :rtype: list[dict]
+    """
     with open(provenance_path, 'r') as f:
         try:
             parsed_provenance = yaml.safe_load(f)
@@ -60,7 +74,16 @@ def parse_provenance(provenance_path):
     return(parsed_provenance)
 
 
-def parse_assembly_provenance(provenance_path):
+def parse_assembly_provenance(provenance_path: Path) -> dict:
+    """
+    Parse a provenance file from the BCCDC-PHL/routine-assembly pipeline, and
+    pick out the pieces of provenance that are relevant for our outputs.
+
+    :param provenance_path: Path to provenanve file
+    :type provenance_path: Path
+    :return: The parsed assembly provenance. Keys: 'assembly_pipeline_name', 'assembly_pipeline_version'
+    :rtype: dict
+    """
     parsed_provenance = parse_provenance(provenance_path)
     assembly_provenance = {}
     for provenance_item in parsed_provenance:
@@ -72,7 +95,16 @@ def parse_assembly_provenance(provenance_path):
     return assembly_provenance
 
 
-def parse_mlst_provenance(provenance_path):
+def parse_mlst_provenance(provenance_path: Path) -> dict:
+    """
+    Parse a provenance file from the BCCDC-PHL/mlst-nf pipeline, and
+    pick out the pieces of provenance that are relevant for our outputs.
+
+    :param provenance_path: Path to provenanve file
+    :type provenance_path: Path
+    :return: The parsed assembly provenance. Keys: 'mlst_pipeline_name', 'mlst_pipeline_version'
+    :rtype: dict
+    """
     parsed_provenance = parse_provenance(provenance_path)
     mlst_provenance = {}
     for provenance_item in parsed_provenance:
@@ -84,7 +116,16 @@ def parse_mlst_provenance(provenance_path):
     return mlst_provenance
 
 
-def parse_taxon_abundance_provenance(provenance_path):
+def parse_taxon_abundance_provenance(provenance_path: Path) -> dict:
+    """
+    Parse a provenance file from the BCCDC-PHL/taxon-abundance pipeline, and
+    pick out the pieces of provenance that are relevant for our outputs.
+
+    :param provenance_path: Path to provenanve file
+    :type provenance_path: Path
+    :return: The parsed assembly provenance. Keys: 'species_pipeline_name', 'species_pipeline_version'
+    :rtype: dict
+    """
     parsed_provenance = parse_provenance(provenance_path)
     taxon_abundance_provenance = {}
     for provenance_item in parsed_provenance:
@@ -96,8 +137,15 @@ def parse_taxon_abundance_provenance(provenance_path):
     return taxon_abundance_provenance
 
 
-def parse_plasmid_screen_provenance(provenance_path):
+def parse_plasmid_screen_provenance(provenance_path: Path) -> dict:
     """
+    Parse a provenance file from the BCCDC-PHL/plasmid-screen pipeline, and
+    pick out the pieces of provenance that are relevant for our outputs.
+
+    :param provenance_path: Path to provenanve file
+    :type provenance_path: Path
+    :return: The parsed assembly provenance. Keys: 'plasmid_database_directory', 'species_pipeline_version'
+    :rtype: dict
     """
     parsed_provenance = parse_provenance(provenance_path)
     plasmid_screen_provenance = {}
@@ -115,7 +163,17 @@ def parse_plasmid_screen_provenance(provenance_path):
     return plasmid_screen_provenance
 
 
-def parse_qc_summary(qc_summary_path):
+def parse_qc_summary(qc_summary_path: Path) -> dict:
+    """
+    Parse a QC summary file, and return a dictionary of QC data, indexed by library_id.
+
+    :param qc_summary_path: Path to QC summary file
+    :type qc_summary_path: Path
+    :return: Dictionary of QC summary data, indexed by library_id. 
+             Inner keys: 'total_bases_input_short', 'total_bases_input_long', 'total_bases_input_short_pass_fail',
+                         'total_bases_input_long_pass_fail', 'overall_pass_fail'
+    :rtype: dict[dict]
+    """
     qc_summary = {}
     with open(qc_summary_path, 'r') as f:
         reader = csv.DictReader(f, dialect='unix')
@@ -161,7 +219,9 @@ def parse_qc_summary(qc_summary_path):
     return qc_summary
 
 
-def parse_mlst_sequence_type(mlst_sequence_type_csv_path):
+def parse_mlst_sequence_type(mlst_sequence_type_csv_path: Path):
+    """
+    """
     sequence_type = {}
     fields_to_collect = {
         'scheme':        'mlst_scheme',
@@ -177,7 +237,9 @@ def parse_mlst_sequence_type(mlst_sequence_type_csv_path):
     return sequence_type
 
 
-def parse_mlst_alleles(mlst_json_path):
+def parse_mlst_alleles(mlst_json_path: Path):
+    """
+    """
     mlst_json = {}
     with open(mlst_json_path, 'r') as f:
         mlst_json = json.load(f)
@@ -194,7 +256,9 @@ def parse_mlst_alleles(mlst_json_path):
     return alleles
 
 
-def collect_mlst_results(mlst_output_dir):
+def collect_mlst_results(mlst_output_dir: Path):
+    """
+    """
     mlst_results_by_sample_id = {}
 
     sequence_type_by_sample_id = {}
@@ -229,7 +293,9 @@ def collect_mlst_results(mlst_output_dir):
     return mlst_results_by_sample_id
 
 
-def parse_top_species(top_species_csv_path):
+def parse_top_species(top_species_csv_path: Path):
+    """
+    """
     top_species = {}
     fields_to_collect = {
         'abundance_1_name':                  'species_1_name',
@@ -255,7 +321,74 @@ def parse_top_species(top_species_csv_path):
     return top_species
 
 
-def collect_taxon_abundance_results(taxon_abundance_output_dir):
+def parse_abricate_report(abricate_report_tsv_path: Path) -> list[dict]:
+    """
+    Parse the Abricate report TSV file and return a list of dictionaries.
+
+    :param abricate_report_tsv_path: Path to the Abricate report TSV file.
+    :type abricate_report_tsv_path: Path
+    :return: List of dictionaries containing the parsed Abricate report.
+    :rtype: list[dict]
+    """
+    parsed_abricate_report = []
+    fieldname_translations = {
+        'sequence': 'contig_id',
+    }
+    int_fields = [
+        'start',
+        'end',
+    ]
+    float_fields = [
+        'percent_coverage',
+        'percent_identity',
+    ]
+    with open(abricate_report_tsv_path, 'r') as f:
+        reader = csv.DictReader(f, delimiter='\t')
+        for row in reader:
+            abricate_report_record = {}
+            original_keys = list(row.keys())
+            cleaned_keys = [key.strip().lstrip('#').lower().replace('%', 'percent_') for key in row.keys()]
+
+            for idx, cleaned_key in enumerate(cleaned_keys):
+                if cleaned_key in fieldname_translations:
+                    key = fieldname_translations[cleaned_key]
+                else:
+                    key = cleaned_key
+
+                original_key = original_keys[idx]
+
+                if key in int_fields:
+                    try:
+                        abricate_report_record[key] = int(row[original_key])
+                    except ValueError:
+                        abricate_report_record[key] = None
+                elif key in float_fields:
+                    try:
+                        abricate_report_record[key] = float(row[original_key])
+                    except ValueError:
+                        abricate_report_record[key] = None
+                else:
+                    abricate_report_record[key] = row[original_key]
+
+            parsed_abricate_report.append(abricate_report_record)
+
+    for record in parsed_abricate_report:
+        filename = record['file']
+        if 'chromosome' in filename:
+            contig_localization = 'chromosome'
+        elif 'plasmid' in filename:
+            contig_localization = 'plasmid'
+        else:
+            contig_localization = None
+
+        record['contig_localization'] = contig_localization
+
+    return parsed_abricate_report
+
+
+def collect_taxon_abundance_results(taxon_abundance_output_dir: Path):
+    """
+    """
     taxon_abundance_results_by_sample_id = {}
     top_species_files = glob.glob(os.path.join(taxon_abundance_output_dir, '*', '*_S_top_5.csv'))
     top_species_by_sample_id = {}
@@ -279,7 +412,9 @@ def collect_taxon_abundance_results(taxon_abundance_output_dir):
     return taxon_abundance_results_by_sample_id
 
 
-def parse_resistance_gene_report(resistance_gene_report_tsv_path):
+def parse_resistance_gene_report(resistance_gene_report_tsv_path: Path):
+    """
+    """
     resistance_genes = []
     fields_to_collect = {
         'resistance_gene_id':                    'resistance_gene_id',
@@ -307,6 +442,8 @@ def parse_resistance_gene_report(resistance_gene_report_tsv_path):
                 gene = {}
                 for original_field, output_field in fields_to_collect.items():
                     gene[output_field] = row[original_field]
+                localization = row['assembly_file'].split('.')[0].split('_')[1]
+                gene['resistance_gene_contig_localization'] = localization
                 resistance_genes.append(gene)
     except FileNotFoundError as e:
         resistance_genes = [null_output]
@@ -314,21 +451,32 @@ def parse_resistance_gene_report(resistance_gene_report_tsv_path):
     return resistance_genes
 
 
-def collect_plasmid_results(plasmid_screen_output_dir):
+def collect_plasmid_results(plasmid_screen_output_dir: Path):
+    """
+    Collect plasmid results from a directory of plasmid screen output files
+
+    :param plasmid_screen_output_dir: path to directory containing plasmid screen output files
+    :type plasmid_screen_output_dir: Path
+    :return: dict of plasmid results
+    :rtype: dict
+    """
     plasmid_results_by_sample_id = {}
-    plasmid_screen_provenance_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_provenance.yml'))
-    first_plasmid_screen_provenance_file = plasmid_screen_provenance_files[0]
-    plasmid_screen_provenance = parse_plasmid_screen_provenance(first_plasmid_screen_provenance_file)
-    plasmid_database_directory = plasmid_screen_provenance['plasmid_database_directory']
-    plasmid_database_metadata_file = os.path.join(plasmid_database_directory, 'metadata.json')
+
     plasmid_database_metadata = {
         'dbname': None,
         'version': None,
         'date': None,
     }
-    if os.path.exists(plasmid_database_metadata_file):
-        with open(plasmid_database_metadata_file, 'r') as f:
-            plasmid_database_metadata = json.load(f)
+    plasmid_screen_provenance_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_provenance.yml'))
+    if len(plasmid_screen_provenance_files) > 0:
+        first_plasmid_screen_provenance_file = plasmid_screen_provenance_files[0]
+        plasmid_screen_provenance = parse_plasmid_screen_provenance(first_plasmid_screen_provenance_file)
+        plasmid_database_directory = plasmid_screen_provenance['plasmid_database_directory']
+        plasmid_database_metadata_file = os.path.join(plasmid_database_directory, 'metadata.json')
+        
+        if os.path.exists(plasmid_database_metadata_file):
+            with open(plasmid_database_metadata_file, 'r') as f:
+                plasmid_database_metadata = json.load(f)
     
     resistance_gene_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_resistance_gene_report.tsv'))
     for resistance_gene_report_file in resistance_gene_report_files:
@@ -339,6 +487,92 @@ def collect_plasmid_results(plasmid_screen_output_dir):
             sample_plasmid_results['plasmid_database_name'] = plasmid_database_metadata['dbname']
             sample_plasmid_results['plasmid_database_version'] = plasmid_database_metadata['version']
             sample_plasmid_results['plasmid_database_date'] = plasmid_database_metadata['date']
+
+    # In cases where no plasmid contigs are found, the carbapenemase may not be present in
+    # the resistance gene report files. We can recover these carbapenemase gene detections
+    # by taking them directly from the abricate reports.
+    chromosomal_carbapenemases_by_sample_id = {}
+
+    abricate_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_abricate.tsv'))
+    abricate_ncbi_report_files = glob.glob(os.path.join(plasmid_screen_output_dir, '*', '*_abricate_ncbi.tsv'))
+    all_abricate_report_files = abricate_report_files + abricate_ncbi_report_files
+    for abricate_report_file in all_abricate_report_files:
+        sample_id = os.path.basename(abricate_report_file).split('_')[0]
+        abricate_report = parse_abricate_report(abricate_report_file)
+        abricate_carbapenemases = [x for x in abricate_report if 'CARBAPENEM' in x['resistance']]
+        chromosomal_carbapenemases = [x for x in abricate_carbapenemases if 'chromosome' in x['contig_localization']]
+        chromosomal_carbapenemases_by_sample_id[sample_id] = chromosomal_carbapenemases
+
+    # First check to see if the chromosomal carbapenemase is already present
+    # in the resistance gene report. This is commonly true, as long as some
+    # plasmid contigs were found by mob-suite
+    for sample_id, chromosomal_carbapenemases in chromosomal_carbapenemases_by_sample_id.items():
+        for chromosomal_carbapenemase in chromosomal_carbapenemases:
+            chromosomal_carbapenemase_gene_id = chromosomal_carbapenemase['gene']
+            chromosomal_contig_id = chromosomal_carbapenemase['contig_id']
+            chromosomal_carbapenemase['present_in_plasmid_results'] = False
+            fields_to_compare = {
+                'gene': 'resistance_gene_id',
+                'contig_id': 'resistance_gene_contig_id',
+            }
+            if sample_id not in plasmid_results_by_sample_id:
+                continue
+            for plasmid_result in plasmid_results_by_sample_id[sample_id]:
+                match_found = all([chromosomal_carbapenemase[chromosomal_key] == plasmid_result[plasmid_result_key] for chromosomal_key, plasmid_result_key in fields_to_compare.items()])
+                if match_found:
+                    chromosomal_carbapenemase['present_in_plasmid_results'] = True
+
+    # For any chromosomal carbapenemase that was not included in the resistance gene report,
+    # include it here. Even though it isn't strictly a 'plasmid result', this is where
+    # We report any carbapenemase gene found.
+    for sample_id, chromosomal_carbapenemases in chromosomal_carbapenemases_by_sample_id.items():
+        for chromosomal_carbapenemase in chromosomal_carbapenemases:
+            if 'present_in_plasmid_results' not in chromosomal_carbapenemase:
+                print(json.dumps(chromosomal_carbapenemases_by_sample_id[sample_id], indent=2))
+                exit()
+            if not chromosomal_carbapenemase['present_in_plasmid_results']:
+                if sample_id not in plasmid_results_by_sample_id:
+                    plasmid_results_by_sample_id[sample_id] = []
+                # Unfortunately the abricate report doesn't include the total contig size so we'll
+                # need to look that up in the mobtyper contig report
+                resistance_gene_contig_size = '-'
+                resistance_gene_contig_id = chromosomal_carbapenemase['contig_id']
+                mobtyper_contig_report_path = os.path.join(plasmid_screen_output_dir, sample_id, f"{sample_id}_mobtyper_contig_report.tsv")
+                if os.path.exists(mobtyper_contig_report_path):
+                    with open(mobtyper_contig_report_path, 'r') as f:
+                        reader = csv.DictReader(f, delimiter='\t')
+                        for row in reader:
+                            contig_report_contig_id = row['contig_id']
+                            fixed_contig_report_contig_id = '_'.join(contig_report_contig_id.split('_')[0:2])
+                            if fixed_contig_report_contig_id == resistance_gene_contig_id:
+                                resistance_gene_contig_size = int(row['size'])
+                plasmid_result = {
+                    'resistance_gene_id': chromosomal_carbapenemase['gene'],
+                    'resistance_gene_contig_id': chromosomal_carbapenemase['contig_id'],
+                    'resistance_gene_contig_size': resistance_gene_contig_size,
+                    'resistance_gene_contig_localization': chromosomal_carbapenemase['contig_localization'],
+                    'resistance_gene_percent_coverage': chromosomal_carbapenemase['percent_coverage'],
+                    'resistance_gene_percent_identity': chromosomal_carbapenemase['percent_identity'],
+                    'plasmid_database_name': plasmid_database_metadata['dbname'],
+                    'plasmid_database_version': plasmid_database_metadata['version'],
+                    'plasmid_database_date': plasmid_database_metadata['date'],
+                }
+                blank_fields = [
+                    'plasmid_num_contigs',
+                    'plasmid_size',
+                    'plasmid_replicon_types',
+                    'plasmid_mob_suite_primary_cluster_id',
+                    'plasmid_mob_suite_secondary_cluster_id',
+                    'plasmid_mash_nearest_neighbor',
+                    'plasmid_alignment_ref',
+                    'plasmid_alignment_depth_threshold',
+                    'plasmid_alignment_percent_coverage_above_depth_threshold',
+                    'plasmid_alignment_num_snps',
+                ]
+                for field in blank_fields:
+                    plasmid_result[field] = '-'
+                plasmid_results_by_sample_id[sample_id].append(plasmid_result)
+
 
     return plasmid_results_by_sample_id
 
@@ -561,6 +795,9 @@ def main(args):
         v['library_id'] = k
         v['assembly_tool_name'] = args.assembler
         v['assembly_mode'] = assembly_mode
+        v['carbapenemase_detected'] = False
+        if v['library_id'] in plasmid_results_by_sample_id:
+            v['carbapenemase_detected'] = True
         core_output.append(v)
 
     output_fieldnames = [
@@ -571,6 +808,7 @@ def main(args):
         'total_bases_input_long',
         'total_bases_input_long_pass_fail',
         'overall_pass_fail',
+        'carbapenemase_detected',
         'read1_mean_length',
         'read2_mean_length',
         'q30_rate_short',
@@ -664,7 +902,8 @@ def main(args):
             v['library_id'] = k
             v['assembly_tool_name'] = args.assembler
             v['assembly_mode'] = assembly_mode
-            plasmid_output.append(v)
+            if 'resistance_gene_id' in v and v['resistance_gene_id'] and v['resistance_gene_id'] != '':
+                plasmid_output.append(v)
 
     plasmid_output_fieldnames = [
         'sequencing_run_id',
@@ -679,6 +918,7 @@ def main(args):
         'resistance_gene_id',
         'resistance_gene_contig_id',
         'resistance_gene_contig_size',
+        'resistance_gene_contig_localization',
         'resistance_gene_percent_coverage',
         'resistance_gene_percent_identity',
         'plasmid_num_contigs',
